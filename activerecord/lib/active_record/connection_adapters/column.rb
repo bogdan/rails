@@ -1,5 +1,6 @@
 require 'set'
 require 'active_support/deprecation'
+require "active_support/core_ext/object/to_boolean"
 
 module ActiveRecord
   # :stopdoc:
@@ -184,11 +185,7 @@ module ActiveRecord
 
         # convert something to a boolean
         def value_to_boolean(value)
-          if value.is_a?(String) && value.blank?
-            nil
-          else
-            TRUE_VALUES.include?(value)
-          end
+          value.to_boolean
         end
 
         # convert something to a BigDecimal

@@ -21,8 +21,7 @@ module ActiveRecord
             if Numeric === value || value !~ /[^0-9]/
               !value.to_i.zero?
             else
-              return false if ActiveRecord::ConnectionAdapters::Column::FALSE_VALUES.include?(value)
-              !value.blank?
+              value.to_boolean(false)
             end
           elsif column.number?
             !value.zero?
