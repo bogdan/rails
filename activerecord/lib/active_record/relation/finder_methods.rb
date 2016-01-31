@@ -147,9 +147,18 @@ module ActiveRecord
     def last(limit = nil)
       return find_last(limit) if loaded?
 
-      result = order_values.empty? && primary_key ? order(arel_table[primary_key].desc) : reverse_order
-      result = result.limit!(limit || 1)
-      limit ? result.reverse : result.first
+      initial_limit = limit_value
+      sql_limit = [limit || 1, initial_limit || Float::INFINITY].min
+
+      result = limit(sql_limit)
+      if initial_limit
+        result.offset!((offset_value || 0) + initial_limit - sql_limit)
+      else
+        result.order!(arel_table[primary_key]) if order_values.empty? && primary_key
+        result = result.reverse_order!.reverse
+      end
+
+      limit ? result : result.first
     rescue ActiveRecord::IrreversibleOrderError
       ActiveSupport::Deprecation.warn(<<-WARNING.squish)
           Finding a last element by loading the relation when SQL ORDER
@@ -158,10 +167,6 @@ module ActiveRecord
           Please call `to_a.last` if you still want to load the relation.
       WARNING
       find_last(limit)
-    end
-
-    def find_last(limit)
-      limit ? to_a.last(limit) : to_a.last
     end
 
     # Same as #last but raises ActiveRecord::RecordNotFound if no record
@@ -540,6 +545,10 @@ module ActiveRecord
         index += offset
         find_nth_with_limit(index, limit)
       end
+    end
+
+    def find_last(limit)
+      limit ? to_a.last(limit) : to_a.last
     end
   end
 end
