@@ -80,9 +80,16 @@ module ActiveRecord
     end
 
     def cast_values(type_overrides = {}) # :nodoc:
-      types = columns.map { |name| column_type(name, type_overrides) }
+      types = column_types.merge(type_overrides)
+      #types = columns.map { |name| column_type(name, type_overrides) }
       result = rows.map do |values|
-        types.zip(values).map { |type, value| type.deserialize(value) }
+        res = []
+        columns.zip(values) do |column, value|
+          #require 'byebug'; byebug if types[column].nil?
+          res << types.fetch(column) { IDENTITY_TYPE }.deserialize(value)
+        end
+        res
+        #types.zip(values).map { |type, value| type.deserialize(value) }
       end
 
       columns.one? ? result.map!(&:first) : result
