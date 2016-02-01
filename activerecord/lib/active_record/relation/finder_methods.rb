@@ -145,6 +145,7 @@ module ActiveRecord
     #
     #   [#<Person id:4>, #<Person id:3>, #<Person id:2>]
     def last(limit = nil)
+      return old_last(limit)
       return find_last(limit) if loaded?
 
       initial_limit = limit_value
@@ -167,6 +168,27 @@ module ActiveRecord
           Please call `to_a.last` if you still want to load the relation.
       WARNING
       find_last(limit)
+    end
+
+    def old_last(limit = nil)
+      if limit
+        if order_values.empty? && primary_key
+          order(arel_table[primary_key].desc).limit(limit).reverse
+        else
+          to_a.last(limit)
+        end
+      else
+      if loaded?
+        @records.last
+      else
+        @last ||=
+          if limit_value
+            to_a.last
+          else
+            reverse_order.limit(1).to_a.first
+          end
+      end
+      end
     end
 
     # Same as #last but raises ActiveRecord::RecordNotFound if no record
