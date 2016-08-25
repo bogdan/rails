@@ -1179,7 +1179,7 @@ class HasManyThroughAssociationsTest < ActiveRecord::TestCase
     Club.has_many :distinct_memberships, -> { distinct }, class_name: "Membership"
     Club.has_many :special_favourites, through: :distinct_memberships, source: :member
 
-    assert_nil Club.new.special_favourites.distinct_value
+    assert_equal false, Club.new.special_favourites.distinct_value
   end
 
   def test_association_force_reload_with_only_true_is_deprecated

@@ -5,8 +5,10 @@ module ActiveRecord
                             :order, :joins, :left_joins, :left_outer_joins, :references,
                             :extending, :unscope]
 
-    SINGLE_VALUE_METHODS = [:limit, :offset, :lock, :readonly, :reordering,
-                            :reverse_order, :distinct, :create_with]
+    BOOLEAN_VALUE_METHODS = [:lock, :readonly, :reordering, :reverse_order, :distinct]
+    INTEGER_VALUE_METHODS = [:limit, :offset]
+    SINGLE_VALUE_METHODS = BOOLEAN_VALUE_METHODS + INTEGER_VALUE_METHODS + [:create_with]
+
     CLAUSE_METHODS = [:where, :having, :from]
     INVALID_METHODS_FOR_DELETE_ALL = [:limit, :distinct, :offset, :group, :having]
 

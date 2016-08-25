@@ -1192,15 +1192,15 @@ module ActiveRecord
         case name
         when :create_with
           FROZEN_EMPTY_HASH
-        when :readonly
-          false
         when :where, :having
           Relation::WhereClause.empty
         when :from
           Relation::FromClause.empty
         when *Relation::MULTI_VALUE_METHODS
           FROZEN_EMPTY_ARRAY
-        when *Relation::SINGLE_VALUE_METHODS
+        when *Relation::BOOLEAN_VALUE_METHODS
+          false
+        when *Relation::INTEGER_VALUE_METHODS
           nil
         else
           raise ArgumentError, "unknown relation value #{name.inspect}"

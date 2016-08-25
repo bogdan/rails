@@ -40,10 +40,12 @@ module ActiveRecord
 
     def test_initialize_single_values
       relation = Relation.new(FakeKlass, :b, nil)
-      (Relation::SINGLE_VALUE_METHODS - [:create_with, :readonly]).each do |method|
+      Relation::INTEGER_VALUE_METHODS.each do |method|
         assert_nil relation.send("#{method}_value"), method.to_s
       end
-      assert_equal false, relation.readonly_value
+      Relation::BOOLEAN_VALUE_METHODS.each do |method|
+        assert_equal false,relation.send("#{method}_value"), method.to_s
+      end
       value = relation.create_with_value
       assert_equal({}, value)
       assert_predicate value, :frozen?
