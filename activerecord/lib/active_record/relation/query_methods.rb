@@ -910,7 +910,11 @@ module ActiveRecord
 
       # Sets the relation value with the given name
       def set_value(name, value) # :nodoc:
-        assert_mutability!
+        if name == :preload && loaded?
+          preload_to_records(value)
+        else
+          assert_mutability!
+        end
         @values[name] = value
       end
 

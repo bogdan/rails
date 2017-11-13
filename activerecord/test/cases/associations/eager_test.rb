@@ -1511,6 +1511,51 @@ class EagerAssociationTest < ActiveRecord::TestCase
     Author.preload(:readonly_comments).first!
   end
 
+  test "preloading into loaded relation" do
+    relation = Post.where(id: [1, 2]).load
+    relation.preload!(:comments)
+    assert_no_queries do
+      assert relation.first.comments.loaded?
+      assert_equal 2, relation.first.comments.size
+      assert relation.last.comments.loaded?
+      assert_equal 1, relation.last.comments.size
+    end
+  end
+
+  test "preloading into loaded relation where objects are partially loaded" do
+    relation = Post.where(id: [1, 2]).load
+    relation.first.comments.to_a
+    relation.preload!(:comments)
+    assert_no_queries do
+      assert relation.first.comments.loaded?
+      assert_equal 2, relation.first.comments.size
+      assert relation.last.comments.loaded?
+      assert_equal 1, relation.last.comments.size
+    end
+  end
+
+  test "preloading singular association into loaded relation where objects are partially loaded" do
+    relation = Post.where(id: [1, 2]).load
+    relation.first.author
+    relation.preload!(:author)
+    assert_no_queries do
+      assert relation.first.author
+      assert relation.last.author
+    end
+  end
+
+  test "preloading through association into loaded relation where objects are partially loaded" do
+    relation = Post.where(id: [1, 2]).load
+    relation.first.tags.to_a
+    relation.preload!(:tags)
+    assert_no_queries do
+      assert relation.first.tags.loaded?
+      assert_equal 1, relation.first.tags.size
+      assert relation.last.tags.loaded?
+      assert_equal 1, relation.last.tags.size
+    end
+  end
+
   private
     def find_all_ordered(klass, include = nil)
       klass.order("#{klass.table_name}.#{klass.primary_key}").includes(include).to_a

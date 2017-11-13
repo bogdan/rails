@@ -14,7 +14,8 @@ module ActiveRecord
           @preloaded_records = preloaders.flat_map(&:preloaded_records)
 
           owners.each do |owner|
-            through_records = Array(owner.association(through_reflection.name).target)
+            through_association = owner.association(through_reflection.name)
+            through_records = Array(through_association.target)
             if already_loaded
               if source_type = reflection.options[:source_type]
                 through_records = through_records.select do |record|
@@ -22,7 +23,7 @@ module ActiveRecord
                 end
               end
             else
-              owner.association(through_reflection.name).reset if through_scope
+              through_association.reset if through_scope
             end
             result = through_records.flat_map do |record|
               association = record.association(source_reflection.name)
@@ -35,7 +36,7 @@ module ActiveRecord
               result.sort_by! { |rhs| preload_index[rhs] } if reflection_scope.order_values.any?
               result.uniq! if reflection_scope.distinct_value
             end
-            associate_records_to_owner(owner, result)
+            associate_records_to_owner(owner, result) unless owner.association(reflection.name).loaded?
           end
         end
 

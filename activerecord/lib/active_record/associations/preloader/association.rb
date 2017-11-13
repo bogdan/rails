@@ -23,7 +23,9 @@ module ActiveRecord
           end
 
           owners.each do |owner|
-            associate_records_to_owner(owner, records[convert_key(owner[owner_key_name])] || [])
+            unless owner.association(reflection.name).loaded?
+              associate_records_to_owner(owner, records[convert_key(owner[owner_key_name])] || [])
+            end
           end
         end
 
