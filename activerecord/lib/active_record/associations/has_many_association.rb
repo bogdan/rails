@@ -60,18 +60,22 @@ module ActiveRecord
         # If the collection is empty the target is set to an empty array and
         # the loaded flag is set to true as well.
         def count_records
-          count = if reflection.has_cached_counter?
-            owner._read_attribute(reflection.counter_cache_column).to_i
-          else
-            scope.count(:all)
-          end
+          count = counter_cache_value || scope.count(:all)
 
           # If there's nothing in the database and @target has no new records
           # we are certain the current target is an empty array. This is a
           # documented side-effect of the method that may avoid an extra SELECT.
-          (@target ||= []) && loaded! if count == 0
+          #(@target ||= []) && loaded! if count == 0
 
           [association_scope.limit_value, count].compact.min
+        end
+
+        def counter_cache_value
+          reflection.has_cached_counter? ? owner._read_attribute(reflection.counter_cache_column).to_i : nil
+        end
+
+        def find_target?
+          super && !counter_cache_value&.zero?
         end
 
         def update_counter(difference, reflection = reflection())

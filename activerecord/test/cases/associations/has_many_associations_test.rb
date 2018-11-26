@@ -1341,6 +1341,19 @@ class HasManyAssociationsTest < ActiveRecord::TestCase
     post = posts(:welcome)
     assert_no_queries do
       assert_not_empty post.comments
+      assert_not_predicate post.comments, :loaded?
+    end
+    post = posts(:misc_by_bob)
+    assert_no_queries do
+      assert_empty post.comments
+      assert_predicate post.comments, :loaded?
+    end
+  end
+
+  def test_association_loading_with_counter_cache
+    post = posts(:misc_by_bob)
+    assert_no_queries do
+      assert_empty post.comments.to_a
     end
   end
 
@@ -1928,8 +1941,15 @@ class HasManyAssociationsTest < ActiveRecord::TestCase
   end
 
   def test_counter_cache_on_unloaded_association
-    car = Car.create(name: "My AppliCar")
+    car = Car.create!(name: "My AppliCar")
     assert_equal car.engines.size, 0
+    assert_predicate car.engines, :loaded?
+  end
+
+  def test_counter_cache_on_new_record_unloaded_association
+    car = Car.new(name: "My AppliCar")
+    assert_equal car.engines.size, 0
+    assert_predicate car.engines, :loaded?
   end
 
   def test_get_ids_ignores_include_option
