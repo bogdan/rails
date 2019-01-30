@@ -94,6 +94,7 @@ class ReadOnlyTest < ActiveRecord::TestCase
     # conflicting column names
     unless current_adapter?(:OracleAdapter)
       Post.joins(", developers").scoping do
+        require 'byebug'; byebug
         assert_not_predicate Post.find(1), :readonly?
         assert_predicate Post.readonly.find(1), :readonly?
         assert_not_predicate Post.readonly(false).find(1), :readonly?

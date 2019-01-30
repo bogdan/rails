@@ -427,9 +427,16 @@ module ActiveRecord
           error_message = "Couldn't find #{model_name} without an ID"
           raise RecordNotFound.new(error_message, model_name, primary_key)
         when 1
-          result = find_one(ids.first)
-          expects_array ? [ result ] : result
+          if ActiveRecord::Base === ids.first
+            raise ArgumentError, <<-MSG.squish
+              You are passing an instance of ActiveRecord::Base to `find`.
+              Please pass the id of the object by calling `.id`.
+            MSG
+          end
+          result = find_some(ids)
+          expects_array ? result : result.first
         else
+          return find_some_ordered(ids) unless order_values.present?
           find_some(ids)
         end
       rescue ::RangeError
@@ -454,7 +461,7 @@ module ActiveRecord
       end
 
       def find_some(ids)
-        return find_some_ordered(ids) unless order_values.present?
+        #return find_some_ordered(ids) unless order_values.present?
 
         result = where(primary_key => ids).to_a
         expected_size = [limit_value, ids.size - offset_index].compact.min
