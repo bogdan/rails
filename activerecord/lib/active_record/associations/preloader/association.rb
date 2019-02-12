@@ -110,7 +110,11 @@ module ActiveRecord
           end
 
           def reflection_scope
-            @reflection_scope ||= reflection.scope ? reflection.scope_for(klass.unscoped) : klass.unscoped
+            if reflection.scope
+              @reflection_scope ||= reflection.scope_for(klass.unscoped)
+            else
+              nil
+            end
           end
 
           def build_scope
@@ -120,7 +124,7 @@ module ActiveRecord
               scope.where!(reflection.type => model.polymorphic_name)
             end
 
-            scope.merge!(reflection_scope) if reflection.scope
+            scope.merge!(reflection_scope) if reflection_scope
             scope.merge!(preload_scope) if preload_scope
             scope
           end

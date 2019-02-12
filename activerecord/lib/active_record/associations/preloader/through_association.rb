@@ -27,7 +27,7 @@ module ActiveRecord
             result = through_records.flat_map do |record|
               association = record.association(source_reflection.name)
               target = association.target
-              association.reset if preload_scope
+              association.reset if target_reflection_scope
               target
             end
             result.compact!
@@ -60,7 +60,7 @@ module ActiveRecord
 
             if options[:source_type]
               scope.where! reflection.foreign_type => options[:source_type]
-            elsif !reflection_scope.where_clause.empty?
+            elsif reflection_scope&.where_clause&.any?
               scope.where_clause = reflection_scope.where_clause
               values = reflection_scope.values
 
@@ -93,12 +93,10 @@ module ActiveRecord
           end
 
           def target_reflection_scope
-            if preload_scope
+            if preload_scope && reflection_scope
               reflection_scope.merge(preload_scope)
-            elsif reflection.scope
-              reflection_scope
             else
-              nil
+              reflection_scope || preload_scope
             end
           end
       end

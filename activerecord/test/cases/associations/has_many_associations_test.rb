@@ -2083,7 +2083,9 @@ class HasManyAssociationsTest < ActiveRecord::TestCase
     david = authors(:david)
     expected = [12, 10, 9, 8, 7, 6, 5, 3, 2, 1]
     assert_equal expected, david.comments_desc.map(&:id)
-    assert_equal expected, Author.includes(:comments_desc).find(david.id).comments_desc.map(&:id)
+    preloaded_david = Author.includes(:comments_desc).find(david.id)
+    assert_equal expected, preloaded_david.comments_desc.map(&:id)
+    assert_equal david.posts_sorted_by_id.first.comments.map(&:id), preloaded_david.posts_sorted_by_id.first.comments.map(&:id)
   end
 
   def test_dynamic_find_should_respect_association_order_for_through
