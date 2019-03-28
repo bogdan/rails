@@ -239,13 +239,12 @@ Skipping Callbacks
 
 Just as with validations, it is also possible to skip callbacks by using the following methods:
 
-* `decrement`
+* `decrement!`
 * `decrement_counter`
 * `delete`
 * `delete_all`
-* `increment`
+* `increment!`
 * `increment_counter`
-* `toggle`
 * `update_column`
 * `update_columns`
 * `update_all`
@@ -310,7 +309,7 @@ end
 
 ### Using `:if` and `:unless` with a `Proc`
 
-Finally, it is possible to associate `:if` and `:unless` with a `Proc` object. This option is best suited when writing short validation methods, usually one-liners:
+It is possible to associate `:if` and `:unless` with a `Proc` object. This option is best suited when writing short validation methods, usually one-liners:
 
 ```ruby
 class Order < ApplicationRecord
@@ -337,6 +336,20 @@ class Comment < ApplicationRecord
     unless: Proc.new { |comment| comment.article.ignore_comments? }
 end
 ```
+
+### Combining Callback Conditions
+
+When multiple conditions define whether or not a callback should happen, an `Array` can be used. Moreover, you can apply both `:if` and `:unless` to the same callback.
+
+```ruby
+class Comment < ApplicationRecord
+  after_create :send_email_to_author,
+    if: [Proc.new { |c| c.user.allow_send_email? }, :author_wants_emails?],
+    unless: Proc.new { |c| c.article.ignore_comments? }
+end
+```
+
+The callback only runs when all the `:if` conditions and none of the `:unless` conditions are evaluated to `true`.
 
 Callback Classes
 ----------------
@@ -435,7 +448,9 @@ class PictureFile < ApplicationRecord
 end
 ```
 
-WARNING. The `after_commit` and `after_rollback` callbacks are called for all models created, updated, or destroyed within a transaction block. However, if an exception is raised within one of these callbacks, the exception will bubble up and any remaining `after_commit` or `after_rollback` methods will _not_ be executed. As such, if your callback code could raise an exception, you'll need to rescue it and handle it within the callback in order to allow other callbacks to run.
+WARNING. When a transaction completes, the `after_commit` or `after_rollback` callbacks are called for all models created, updated, or destroyed within that transaction. However, if an exception is raised within one of these callbacks, the exception will bubble up and any remaining `after_commit` or `after_rollback` methods will _not_ be executed. As such, if your callback code could raise an exception, you'll need to rescue it and handle it within the callback in order to allow other callbacks to run.
+
+WARNING. The code executed within `after_commit` or `after_rollback` callbacks is itself not enclosed within a transaction.
 
 WARNING. Using both `after_create_commit` and `after_update_commit` in the same model will only allow the last callback defined to take effect, and will override all others.
 

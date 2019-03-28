@@ -1,3 +1,135 @@
+*   Raise an `ArgumentError` if a resource custom param contains a colon (`:`).
+
+    After this change it's not possible anymore to configure routes like this:
+
+    ```
+    routes.draw do
+      resources :users, param: 'name/:sneaky'
+    end
+    ```
+
+    Fixes #30467.
+
+    *Josua Schmid*
+
+
+## Rails 6.0.0.beta3 (March 11, 2019) ##
+
+*   No changes.
+
+
+## Rails 6.0.0.beta2 (February 25, 2019) ##
+
+*   Make debug exceptions works in an environment where ActiveStorage is not loaded.
+
+    *Tomoyuki Kurosawa*
+
+*   `ActionDispatch::SystemTestCase.driven_by` can now be called with a block
+    to define specific browser capabilities.
+
+    *Edouard Chin*
+
+
+## Rails 6.0.0.beta1 (January 18, 2019) ##
+
+*   Remove deprecated `fragment_cache_key` helper in favor of `combined_fragment_cache_key`.
+
+    *Rafael Mendonça França*
+
+*   Remove deprecated methods in `ActionDispatch::TestResponse`.
+
+    `#success?`, `missing?` and `error?` were deprecated in Rails 5.2 in favor of
+    `#successful?`, `not_found?` and `server_error?`.
+
+    *Rafael Mendonça França*
+
+*   Introduce ActionDispatch::HostAuthorization
+
+    This is a new middleware that guards against DNS rebinding attacks by
+    explicitly permitting the hosts a request can be made to.
+
+    Each host is checked with the case operator (`#===`) to support `RegExp`,
+    `Proc`, `IPAddr` and custom objects as host allowances.
+
+    *Genadi Samokovarov*
+
+*   Allow using `parsed_body` in `ActionController::TestCase`.
+
+    In addition to `ActionDispatch::IntegrationTest`, allow using
+    `parsed_body` in `ActionController::TestCase`:
+
+    ```
+    class SomeControllerTest < ActionController::TestCase
+      def test_some_action
+        post :action, body: { foo: 'bar' }
+        assert_equal({ "foo" => "bar" }, response.parsed_body)
+      end
+    end
+    ```
+
+    Fixes #34676.
+
+    *Tobias Bühlmann*
+
+*   Raise an error on root route naming conflicts.
+
+    Raises an ArgumentError when multiple root routes are defined in the
+    same context instead of assigning nil names to subsequent roots.
+
+    *Gannon McGibbon*
+
+*   Allow rescue from parameter parse errors:
+
+    ```
+    rescue_from ActionDispatch::Http::Parameters::ParseError do
+      head :unauthorized
+    end
+    ```
+
+    *Gannon McGibbon*, *Josh Cheek*
+
+*   Reset Capybara sessions if failed system test screenshot raising an exception.
+
+    Reset Capybara sessions if `take_failed_screenshot` raise exception
+    in system test `after_teardown`.
+
+    *Maxim Perepelitsa*
+
+*   Use request object for context if there's no controller
+
+    There is no controller instance when using a redirect route or a
+    mounted rack application so pass the request object as the context
+    when resolving dynamic CSP sources in this scenario.
+
+    Fixes #34200.
+
+    *Andrew White*
+
+*   Apply mapping to symbols returned from dynamic CSP sources
+
+    Previously if a dynamic source returned a symbol such as :self it
+    would be converted to a string implicitly, e.g:
+
+        policy.default_src -> { :self }
+
+    would generate the header:
+
+        Content-Security-Policy: default-src self
+
+    and now it generates:
+
+        Content-Security-Policy: default-src 'self'
+
+    *Andrew White*
+
+*   Add `ActionController::Parameters#each_value`.
+
+    *Lukáš Zapletal*
+
+*   Deprecate `ActionDispatch::Http::ParameterFilter` in favor of `ActiveSupport::ParameterFilter`.
+
+    *Yoshiyuki Kinjo*
+
 *   Encode Content-Disposition filenames on `send_data` and `send_file`.
     Previously, `send_data 'data', filename: "\u{3042}.txt"` sends
     `"filename=\"\u{3042}.txt\""` as Content-Disposition and it can be
@@ -29,7 +161,7 @@
 
     *Assain Jaleel*
 
-*   Raises `ActionController::RespondToMismatchError` with confliciting `respond_to` invocations.
+*   Raises `ActionController::RespondToMismatchError` with conflicting `respond_to` invocations.
 
     `respond_to` can match multiple types and lead to undefined behavior when
     multiple invocations are made and the types do not match:
@@ -54,7 +186,7 @@
 
     *Aaron Kromer*
 
-*   Pass along arguments to underlying `get` method in `follow_redirect!`.
+*   Pass along arguments to underlying `get` method in `follow_redirect!`
 
     Now all arguments passed to `follow_redirect!` are passed to the underlying
     `get` method. This for example allows to set custom headers for the
@@ -102,9 +234,9 @@
 
     *Derek Prior*
 
-*   Rails 6 requires Ruby 2.4.1 or newer.
+*   Rails 6 requires Ruby 2.5.0 or newer.
 
-    *Jeremy Daer*
+    *Jeremy Daer*, *Kasper Timm Hansen*
 
 
 Please check [5-2-stable](https://github.com/rails/rails/blob/5-2-stable/actionpack/CHANGELOG.md) for previous changes.

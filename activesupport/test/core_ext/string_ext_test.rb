@@ -25,7 +25,7 @@ class StringInflectionsTest < ActiveSupport::TestCase
   end
 
   def test_strip_heredoc_on_a_frozen_string
-    assert "".freeze.strip_heredoc.frozen?
+    assert "".strip_heredoc.frozen?
   end
 
   def test_strip_heredoc_on_a_string_with_no_lines
@@ -204,6 +204,12 @@ class StringInflectionsTest < ActiveSupport::TestCase
     StringToParameterizePreserveCaseWithUnderscore.each do |normal, slugged|
       assert_equal(slugged, normal.parameterize(separator: "_", preserve_case: true))
     end
+  end
+
+  def test_parameterize_with_locale
+    word = "Fünf autos"
+    I18n.backend.store_translations(:de, i18n: { transliterate: { rule: { "ü" => "ue" } } })
+    assert_equal("fuenf-autos", word.parameterize(locale: :de))
   end
 
   def test_humanize
@@ -469,6 +475,15 @@ class StringAccessTest < ActiveSupport::TestCase
     assert_not_same different_string, string
   end
 
+  test "#first with negative Integer is deprecated" do
+    string = "hello"
+    message = "Calling String#first with a negative integer limit " \
+              "will raise an ArgumentError in Rails 6.1."
+    assert_deprecated(message) do
+      string.first(-1)
+    end
+  end
+
   test "#last returns the last character" do
     assert_equal "o", "hello".last
     assert_equal "x", "x".last
@@ -485,6 +500,15 @@ class StringAccessTest < ActiveSupport::TestCase
     string = "hello"
     different_string = string.last(5)
     assert_not_same different_string, string
+  end
+
+  test "#last with negative Integer is deprecated" do
+    string = "hello"
+    message = "Calling String#last with a negative integer limit " \
+              "will raise an ArgumentError in Rails 6.1."
+    assert_deprecated(message) do
+      string.last(-1)
+    end
   end
 
   test "access returns a real string" do
@@ -889,6 +913,54 @@ class OutputSafetyTest < ActiveSupport::TestCase
     string = @string.html_safe
     string = string.concat(13)
     assert_equal (+"hello").concat(13), string
+    assert_predicate string, :html_safe?
+  end
+
+  test "Inserting safe into safe yields safe" do
+    string = "foo".html_safe
+    string.insert(0, "<b>".html_safe)
+
+    assert_equal "<b>foo", string
+    assert_predicate string, :html_safe?
+  end
+
+  test "Inserting unsafe into safe yields escaped safe" do
+    string = "foo".html_safe
+    string.insert(0, "<b>")
+
+    assert_equal "&lt;b&gt;foo", string
+    assert_predicate string, :html_safe?
+  end
+
+  test "Replacing safe with safe yields safe" do
+    string = "foo".html_safe
+    string.replace("<b>".html_safe)
+
+    assert_equal "<b>", string
+    assert_predicate string, :html_safe?
+  end
+
+  test "Replacing safe with unsafe yields escaped safe" do
+    string = "foo".html_safe
+    string.replace("<b>")
+
+    assert_equal "&lt;b&gt;", string
+    assert_predicate string, :html_safe?
+  end
+
+  test "Replacing index of safe with safe yields safe" do
+    string = "foo".html_safe
+    string[0] = "<b>".html_safe
+
+    assert_equal "<b>oo", string
+    assert_predicate string, :html_safe?
+  end
+
+  test "Replacing index of safe with unsafe yields escaped safe" do
+    string = "foo".html_safe
+    string[0] = "<b>"
+
+    assert_equal "&lt;b&gt;oo", string
     assert_predicate string, :html_safe?
   end
 

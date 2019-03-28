@@ -34,10 +34,10 @@ class TextHelperTest < ActionView::TestCase
     assert_equal "<p>A paragraph</p>\n\n<p>and another one!</p>", simple_format("A paragraph\n\nand another one!")
     assert_equal "<p>A paragraph\n<br /> With a newline</p>", simple_format("A paragraph\n With a newline")
 
-    text = "A\nB\nC\nD".freeze
+    text = "A\nB\nC\nD"
     assert_equal "<p>A\n<br />B\n<br />C\n<br />D</p>", simple_format(text)
 
-    text = "A\r\n  \nB\n\n\r\n\t\nC\nD".freeze
+    text = "A\r\n  \nB\n\n\r\n\t\nC\nD"
     assert_equal "<p>A\n<br />  \n<br />B</p>\n\n<p>\t\n<br />C\n<br />D</p>", simple_format(text)
 
     assert_equal '<p class="test">This is a classy test</p>', simple_format("This is a classy test", class: "test")
@@ -359,6 +359,10 @@ class TextHelperTest < ActionView::TestCase
 
   def test_word_wrap_with_extra_newlines
     assert_equal("my very very\nvery long\nstring\n\nwith another\nline", word_wrap("my very very very long string\n\nwith another line", line_width: 15))
+  end
+
+  def test_word_wrap_with_leading_spaces
+    assert_equal("  This is a paragraph\nthat includes some\nindented lines:\n  Like this sample\n  blockquote", word_wrap("  This is a paragraph that includes some\nindented lines:\n  Like this sample\n  blockquote", line_width: 25))
   end
 
   def test_word_wrap_does_not_modify_the_options_hash

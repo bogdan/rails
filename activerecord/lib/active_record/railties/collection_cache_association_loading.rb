@@ -3,7 +3,7 @@
 module ActiveRecord
   module Railties # :nodoc:
     module CollectionCacheAssociationLoading #:nodoc:
-      def setup(context, options, block)
+      def setup(context, options, as, block)
         @relation = relation_from_options(options)
 
         super
@@ -20,13 +20,13 @@ module ActiveRecord
         end
       end
 
-      def collection_without_template
-        @relation.execute_preloads(@collection) if @relation
+      def collection_without_template(*)
+        @relation.preload_associations(@collection) if @relation
         super
       end
 
-      def collection_with_template
-        @relation.execute_preloads(@collection) if @relation
+      def collection_with_template(*)
+        @relation.preload_associations(@collection) if @relation
         super
       end
     end

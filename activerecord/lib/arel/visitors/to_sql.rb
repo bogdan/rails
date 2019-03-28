@@ -9,113 +9,46 @@ module Arel # :nodoc: all
     end
 
     class ToSql < Arel::Visitors::Visitor
-      ##
-      # This is some roflscale crazy stuff.  I'm roflscaling this because
-      # building SQL queries is a hotspot.  I will explain the roflscale so that
-      # others will not rm this code.
-      #
-      # In YARV, string literals in a method body will get duped when the byte
-      # code is executed.  Let's take a look:
-      #
-      # > puts RubyVM::InstructionSequence.new('def foo; "bar"; end').disasm
-      #
-      #   == disasm: <RubyVM::InstructionSequence:foo@<compiled>>=====
-      #    0000 trace            8
-      #    0002 trace            1
-      #    0004 putstring        "bar"
-      #    0006 trace            16
-      #    0008 leave
-      #
-      # The `putstring` bytecode will dup the string and push it on the stack.
-      # In many cases in our SQL visitor, that string is never mutated, so there
-      # is no need to dup the literal.
-      #
-      # If we change to a constant lookup, the string will not be duped, and we
-      # can reduce the objects in our system:
-      #
-      # > puts RubyVM::InstructionSequence.new('BAR = "bar"; def foo; BAR; end').disasm
-      #
-      #  == disasm: <RubyVM::InstructionSequence:foo@<compiled>>========
-      #  0000 trace            8
-      #  0002 trace            1
-      #  0004 getinlinecache   11, <ic:0>
-      #  0007 getconstant      :BAR
-      #  0009 setinlinecache   <ic:0>
-      #  0011 trace            16
-      #  0013 leave
-      #
-      # `getconstant` should be a hash lookup, and no object is duped when the
-      # value of the constant is pushed on the stack.  Hence the crazy
-      # constants below.
-      #
-      # `matches` and `doesNotMatch` operate case-insensitively via Visitor subclasses
-      # specialized for specific databases when necessary.
-      #
-
-      WHERE    = " WHERE "    # :nodoc:
-      SPACE    = " "          # :nodoc:
-      COMMA    = ", "         # :nodoc:
-      GROUP_BY = " GROUP BY " # :nodoc:
-      ORDER_BY = " ORDER BY " # :nodoc:
-      WINDOW   = " WINDOW "   # :nodoc:
-      AND      = " AND "      # :nodoc:
-
-      DISTINCT = "DISTINCT"   # :nodoc:
-
       def initialize(connection)
         super()
         @connection = connection
       end
 
-      def compile(node, collector = Arel::Collectors::SQLString.new, &block)
-        accept(node, collector, &block).value
+      def compile(node, collector = Arel::Collectors::SQLString.new)
+        accept(node, collector).value
       end
 
       private
 
         def visit_Arel_Nodes_DeleteStatement(o, collector)
-          collector << "DELETE FROM "
-          collector = visit o.relation, collector
-          if o.wheres.any?
-            collector << WHERE
-            collector = inject_join o.wheres, collector, AND
+          o = prepare_delete_statement(o)
+
+          if has_join_sources?(o)
+            collector << "DELETE "
+            visit o.relation.left, collector
+            collector << " FROM "
+          else
+            collector << "DELETE FROM "
           end
+          collector = visit o.relation, collector
 
+          collect_nodes_for o.wheres, collector, " WHERE ", " AND "
+          collect_nodes_for o.orders, collector, " ORDER BY "
           maybe_visit o.limit, collector
-        end
-
-        # FIXME: we should probably have a 2-pass visitor for this
-        def build_subselect(key, o)
-          stmt             = Nodes::SelectStatement.new
-          core             = stmt.cores.first
-          core.froms       = o.relation
-          core.wheres      = o.wheres
-          core.projections = [key]
-          stmt.limit       = o.limit
-          stmt.orders      = o.orders
-          stmt
+          maybe_visit o.comment, collector
         end
 
         def visit_Arel_Nodes_UpdateStatement(o, collector)
-          if o.orders.empty? && o.limit.nil?
-            wheres = o.wheres
-          else
-            wheres = [Nodes::In.new(o.key, [build_subselect(o.key, o)])]
-          end
+          o = prepare_update_statement(o)
 
           collector << "UPDATE "
           collector = visit o.relation, collector
-          unless o.values.empty?
-            collector << " SET "
-            collector = inject_join o.values, collector, ", "
-          end
+          collect_nodes_for o.values, collector, " SET "
 
-          unless wheres.empty?
-            collector << " WHERE "
-            collector = inject_join wheres, collector, " AND "
-          end
-
-          collector
+          collect_nodes_for o.wheres, collector, " WHERE ", " AND "
+          collect_nodes_for o.orders, collector, " ORDER BY "
+          maybe_visit o.limit, collector
+          maybe_visit o.comment, collector
         end
 
         def visit_Arel_Nodes_InsertStatement(o, collector)
@@ -131,9 +64,9 @@ module Arel # :nodoc: all
             maybe_visit o.values, collector
           elsif o.select
             maybe_visit o.select, collector
-          else
-            collector
           end
+
+          maybe_visit o.comment, collector
         end
 
         def visit_Arel_Nodes_Exists(o, collector)
@@ -175,39 +108,20 @@ module Arel # :nodoc: all
               when Nodes::SqlLiteral, Nodes::BindParam
                 collector = visit(value, collector)
               else
-                collector << quote(value)
+                collector << quote(value).to_s
               end
-              collector << COMMA unless k == row_len
+              collector << ", " unless k == row_len
             end
             collector << ")"
-            collector << COMMA unless i == len
+            collector << ", " unless i == len
           }
           collector
-        end
-
-        def visit_Arel_Nodes_Values(o, collector)
-          collector << "VALUES ("
-
-          len = o.expressions.length - 1
-          o.expressions.each_with_index { |value, i|
-            case value
-            when Nodes::SqlLiteral, Nodes::BindParam
-              collector = visit value, collector
-            else
-              collector << quote(value).to_s
-            end
-            unless i == len
-              collector << COMMA
-            end
-          }
-
-          collector << ")"
         end
 
         def visit_Arel_Nodes_SelectStatement(o, collector)
           if o.with
             collector = visit o.with, collector
-            collector << SPACE
+            collector << " "
           end
 
           collector = o.cores.inject(collector) { |c, x|
@@ -215,56 +129,57 @@ module Arel # :nodoc: all
           }
 
           unless o.orders.empty?
-            collector << ORDER_BY
+            collector << " ORDER BY "
             len = o.orders.length - 1
             o.orders.each_with_index { |x, i|
               collector = visit(x, collector)
-              collector << COMMA unless len == i
+              collector << ", " unless len == i
             }
           end
 
           visit_Arel_Nodes_SelectOptions(o, collector)
-
-          collector
         end
 
         def visit_Arel_Nodes_SelectOptions(o, collector)
           collector = maybe_visit o.limit, collector
           collector = maybe_visit o.offset, collector
-          collector = maybe_visit o.lock, collector
+          maybe_visit o.lock, collector
         end
 
         def visit_Arel_Nodes_SelectCore(o, collector)
           collector << "SELECT"
 
+          collector = collect_optimizer_hints(o, collector)
           collector = maybe_visit o.set_quantifier, collector
 
-          collect_nodes_for o.projections, collector, SPACE
+          collect_nodes_for o.projections, collector, " "
 
           if o.source && !o.source.empty?
             collector << " FROM "
             collector = visit o.source, collector
           end
 
-          collect_nodes_for o.wheres, collector, WHERE, AND
-          collect_nodes_for o.groups, collector, GROUP_BY
-          unless o.havings.empty?
-            collector << " HAVING "
-            inject_join o.havings, collector, AND
-          end
-          collect_nodes_for o.windows, collector, WINDOW
+          collect_nodes_for o.wheres, collector, " WHERE ", " AND "
+          collect_nodes_for o.groups, collector, " GROUP BY "
+          collect_nodes_for o.havings, collector, " HAVING ", " AND "
+          collect_nodes_for o.windows, collector, " WINDOW "
 
-          collector
+          maybe_visit o.comment, collector
         end
 
-        def collect_nodes_for(nodes, collector, spacer, connector = COMMA)
+        def visit_Arel_Nodes_OptimizerHints(o, collector)
+          hints = o.expr.map { |v| sanitize_as_sql_comment(v) }.join(" ")
+          collector << "/*+ #{hints} */"
+        end
+
+        def visit_Arel_Nodes_Comment(o, collector)
+          collector << o.values.map { |v| "/* #{sanitize_as_sql_comment(v)} */" }.join(" ")
+        end
+
+        def collect_nodes_for(nodes, collector, spacer, connector = ", ")
           unless nodes.empty?
             collector << spacer
-            len = nodes.length - 1
-            nodes.each_with_index do |x, i|
-              collector = visit(x, collector)
-              collector << connector unless len == i
-            end
+            inject_join nodes, collector, connector
           end
         end
 
@@ -273,7 +188,7 @@ module Arel # :nodoc: all
         end
 
         def visit_Arel_Nodes_Distinct(o, collector)
-          collector << DISTINCT
+          collector << "DISTINCT"
         end
 
         def visit_Arel_Nodes_DistinctOn(o, collector)
@@ -282,22 +197,20 @@ module Arel # :nodoc: all
 
         def visit_Arel_Nodes_With(o, collector)
           collector << "WITH "
-          inject_join o.children, collector, COMMA
+          inject_join o.children, collector, ", "
         end
 
         def visit_Arel_Nodes_WithRecursive(o, collector)
           collector << "WITH RECURSIVE "
-          inject_join o.children, collector, COMMA
+          inject_join o.children, collector, ", "
         end
 
         def visit_Arel_Nodes_Union(o, collector)
-          collector << "( "
-          infix_value(o, collector, " UNION ") << " )"
+          infix_value_with_paren(o, collector, " UNION ")
         end
 
         def visit_Arel_Nodes_UnionAll(o, collector)
-          collector << "( "
-          infix_value(o, collector, " UNION ALL ") << " )"
+          infix_value_with_paren(o, collector, " UNION ALL ")
         end
 
         def visit_Arel_Nodes_Intersect(o, collector)
@@ -319,19 +232,16 @@ module Arel # :nodoc: all
         def visit_Arel_Nodes_Window(o, collector)
           collector << "("
 
-          if o.partitions.any?
-            collector << "PARTITION BY "
-            collector = inject_join o.partitions, collector, ", "
-          end
+          collect_nodes_for o.partitions, collector, "PARTITION BY "
 
           if o.orders.any?
-            collector << SPACE if o.partitions.any?
+            collector << " " if o.partitions.any?
             collector << "ORDER BY "
             collector = inject_join o.orders, collector, ", "
           end
 
           if o.framing
-            collector << SPACE if o.partitions.any? || o.orders.any?
+            collector << " " if o.partitions.any? || o.orders.any?
             collector = visit o.framing, collector
           end
 
@@ -536,8 +446,8 @@ module Arel # :nodoc: all
             collector = visit o.left, collector
           end
           if o.right.any?
-            collector << SPACE if o.left
-            collector = inject_join o.right, collector, SPACE
+            collector << " " if o.left
+            collector = inject_join o.right, collector, " "
           end
           collector
         end
@@ -557,7 +467,7 @@ module Arel # :nodoc: all
         def visit_Arel_Nodes_FullOuterJoin(o, collector)
           collector << "FULL OUTER JOIN "
           collector = visit o.left, collector
-          collector << SPACE
+          collector << " "
           visit o.right, collector
         end
 
@@ -571,7 +481,7 @@ module Arel # :nodoc: all
         def visit_Arel_Nodes_RightOuterJoin(o, collector)
           collector << "RIGHT OUTER JOIN "
           collector = visit o.left, collector
-          collector << SPACE
+          collector << " "
           visit o.right, collector
         end
 
@@ -579,7 +489,7 @@ module Arel # :nodoc: all
           collector << "INNER JOIN "
           collector = visit o.left, collector
           if o.right
-            collector << SPACE
+            collector << " "
             visit(o.right, collector)
           else
             collector
@@ -605,6 +515,10 @@ module Arel # :nodoc: all
         end
 
         def visit_Arel_Nodes_In(o, collector)
+          if Array === o.right && !o.right.empty?
+            o.right.delete_if { |value| unboundable?(value) }
+          end
+
           if Array === o.right && o.right.empty?
             collector << "1=0"
           else
@@ -615,6 +529,10 @@ module Arel # :nodoc: all
         end
 
         def visit_Arel_Nodes_NotIn(o, collector)
+          if Array === o.right && !o.right.empty?
+            o.right.delete_if { |value| unboundable?(value) }
+          end
+
           if Array === o.right && o.right.empty?
             collector << "1=1"
           else
@@ -637,7 +555,7 @@ module Arel # :nodoc: all
 
         def visit_Arel_Nodes_Assignment(o, collector)
           case o.right
-          when Arel::Nodes::UnqualifiedColumn, Arel::Attributes::Attribute, Arel::Nodes::BindParam
+          when Arel::Nodes::Node, Arel::Attributes::Attribute
             collector = visit o.left, collector
             collector << " = "
             visit o.right, collector
@@ -651,6 +569,8 @@ module Arel # :nodoc: all
         def visit_Arel_Nodes_Equality(o, collector)
           right = o.right
 
+          return collector << "1=0" if unboundable?(right)
+
           collector = visit o.left, collector
 
           if right.nil?
@@ -661,8 +581,30 @@ module Arel # :nodoc: all
           end
         end
 
+        def visit_Arel_Nodes_IsNotDistinctFrom(o, collector)
+          if o.right.nil?
+            collector = visit o.left, collector
+            collector << " IS NULL"
+          else
+            collector = is_distinct_from(o, collector)
+            collector << " = 0"
+          end
+        end
+
+        def visit_Arel_Nodes_IsDistinctFrom(o, collector)
+          if o.right.nil?
+            collector = visit o.left, collector
+            collector << " IS NOT NULL"
+          else
+            collector = is_distinct_from(o, collector)
+            collector << " = 1"
+          end
+        end
+
         def visit_Arel_Nodes_NotEqual(o, collector)
           right = o.right
+
+          return collector << "1=1" if unboundable?(right)
 
           collector = visit o.left, collector
 
@@ -732,8 +674,6 @@ module Arel # :nodoc: all
         end
 
         alias :visit_Arel_Nodes_SqlLiteral :literal
-        alias :visit_Bignum                :literal
-        alias :visit_Fixnum                :literal
         alias :visit_Integer               :literal
 
         def quoted(o, a)
@@ -799,6 +739,15 @@ module Arel # :nodoc: all
           @connection.quote_column_name(name)
         end
 
+        def sanitize_as_sql_comment(value)
+          return value if Arel::Nodes::SqlLiteral === value
+          @connection.sanitize_as_sql_comment(value)
+        end
+
+        def collect_optimizer_hints(o, collector)
+          maybe_visit o.optimizer_hints, collector
+        end
+
         def maybe_visit(thing, collector)
           return collector unless thing
           collector << " "
@@ -816,10 +765,70 @@ module Arel # :nodoc: all
           }
         end
 
+        def unboundable?(value)
+          value.respond_to?(:unboundable?) && value.unboundable?
+        end
+
+        def has_join_sources?(o)
+          o.relation.is_a?(Nodes::JoinSource) && !o.relation.right.empty?
+        end
+
+        def has_limit_or_offset_or_orders?(o)
+          o.limit || o.offset || !o.orders.empty?
+        end
+
+        # The default strategy for an UPDATE with joins is to use a subquery. This doesn't work
+        # on MySQL (even when aliasing the tables), but MySQL allows using JOIN directly in
+        # an UPDATE statement, so in the MySQL visitor we redefine this to do that.
+        def prepare_update_statement(o)
+          if o.key && (has_limit_or_offset_or_orders?(o) || has_join_sources?(o))
+            stmt = o.clone
+            stmt.limit = nil
+            stmt.offset = nil
+            stmt.orders = []
+            stmt.wheres = [Nodes::In.new(o.key, [build_subselect(o.key, o)])]
+            stmt.relation = o.relation.left if has_join_sources?(o)
+            stmt
+          else
+            o
+          end
+        end
+        alias :prepare_delete_statement :prepare_update_statement
+
+        # FIXME: we should probably have a 2-pass visitor for this
+        def build_subselect(key, o)
+          stmt             = Nodes::SelectStatement.new
+          core             = stmt.cores.first
+          core.froms       = o.relation
+          core.wheres      = o.wheres
+          core.projections = [key]
+          stmt.limit       = o.limit
+          stmt.offset      = o.offset
+          stmt.orders      = o.orders
+          stmt
+        end
+
         def infix_value(o, collector, value)
           collector = visit o.left, collector
           collector << value
           visit o.right, collector
+        end
+
+        def infix_value_with_paren(o, collector, value, suppress_parens = false)
+          collector << "( " unless suppress_parens
+          collector = if o.left.class == o.class
+            infix_value_with_paren(o.left, collector, value, true)
+          else
+            visit o.left, collector
+          end
+          collector << value
+          collector = if o.right.class == o.class
+            infix_value_with_paren(o.right, collector, value, true)
+          else
+            visit o.right, collector
+          end
+          collector << " )" unless suppress_parens
+          collector
         end
 
         def aggregate(name, o, collector)
@@ -834,6 +843,19 @@ module Arel # :nodoc: all
           else
             collector
           end
+        end
+
+        def is_distinct_from(o, collector)
+          collector << "CASE WHEN "
+          collector = visit o.left, collector
+          collector << " = "
+          collector = visit o.right, collector
+          collector << " OR ("
+          collector = visit o.left, collector
+          collector << " IS NULL AND "
+          collector = visit o.right, collector
+          collector << " IS NULL)"
+          collector << " THEN 0 ELSE 1 END"
         end
     end
   end

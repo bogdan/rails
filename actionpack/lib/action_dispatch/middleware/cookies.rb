@@ -9,7 +9,7 @@ require "rack/utils"
 module ActionDispatch
   class Request
     def cookie_jar
-      fetch_header("action_dispatch.cookies".freeze) do
+      fetch_header("action_dispatch.cookies") do
         self.cookie_jar = Cookies::CookieJar.build(self, cookies)
       end
     end
@@ -22,11 +22,11 @@ module ActionDispatch
     }
 
     def have_cookie_jar?
-      has_header? "action_dispatch.cookies".freeze
+      has_header? "action_dispatch.cookies"
     end
 
     def cookie_jar=(jar)
-      set_header "action_dispatch.cookies".freeze, jar
+      set_header "action_dispatch.cookies", jar
     end
 
     def key_generator
@@ -59,10 +59,6 @@ module ActionDispatch
 
     def signed_cookie_digest
       get_header Cookies::SIGNED_COOKIE_DIGEST
-    end
-
-    def secret_token
-      get_header Cookies::SECRET_TOKEN
     end
 
     def secret_key_base
@@ -172,21 +168,20 @@ module ActionDispatch
   # * <tt>:httponly</tt> - Whether this cookie is accessible via scripting or
   #   only HTTP. Defaults to +false+.
   class Cookies
-    HTTP_HEADER   = "Set-Cookie".freeze
-    GENERATOR_KEY = "action_dispatch.key_generator".freeze
-    SIGNED_COOKIE_SALT = "action_dispatch.signed_cookie_salt".freeze
-    ENCRYPTED_COOKIE_SALT = "action_dispatch.encrypted_cookie_salt".freeze
-    ENCRYPTED_SIGNED_COOKIE_SALT = "action_dispatch.encrypted_signed_cookie_salt".freeze
-    AUTHENTICATED_ENCRYPTED_COOKIE_SALT = "action_dispatch.authenticated_encrypted_cookie_salt".freeze
-    USE_AUTHENTICATED_COOKIE_ENCRYPTION = "action_dispatch.use_authenticated_cookie_encryption".freeze
-    ENCRYPTED_COOKIE_CIPHER = "action_dispatch.encrypted_cookie_cipher".freeze
-    SIGNED_COOKIE_DIGEST = "action_dispatch.signed_cookie_digest".freeze
-    SECRET_TOKEN = "action_dispatch.secret_token".freeze
-    SECRET_KEY_BASE = "action_dispatch.secret_key_base".freeze
-    COOKIES_SERIALIZER = "action_dispatch.cookies_serializer".freeze
-    COOKIES_DIGEST = "action_dispatch.cookies_digest".freeze
-    COOKIES_ROTATIONS = "action_dispatch.cookies_rotations".freeze
-    USE_COOKIES_WITH_METADATA = "action_dispatch.use_cookies_with_metadata".freeze
+    HTTP_HEADER   = "Set-Cookie"
+    GENERATOR_KEY = "action_dispatch.key_generator"
+    SIGNED_COOKIE_SALT = "action_dispatch.signed_cookie_salt"
+    ENCRYPTED_COOKIE_SALT = "action_dispatch.encrypted_cookie_salt"
+    ENCRYPTED_SIGNED_COOKIE_SALT = "action_dispatch.encrypted_signed_cookie_salt"
+    AUTHENTICATED_ENCRYPTED_COOKIE_SALT = "action_dispatch.authenticated_encrypted_cookie_salt"
+    USE_AUTHENTICATED_COOKIE_ENCRYPTION = "action_dispatch.use_authenticated_cookie_encryption"
+    ENCRYPTED_COOKIE_CIPHER = "action_dispatch.encrypted_cookie_cipher"
+    SIGNED_COOKIE_DIGEST = "action_dispatch.signed_cookie_digest"
+    SECRET_KEY_BASE = "action_dispatch.secret_key_base"
+    COOKIES_SERIALIZER = "action_dispatch.cookies_serializer"
+    COOKIES_DIGEST = "action_dispatch.cookies_digest"
+    COOKIES_ROTATIONS = "action_dispatch.cookies_rotations"
+    USE_COOKIES_WITH_METADATA = "action_dispatch.use_cookies_with_metadata"
 
     # Cookies can typically store 4096 bytes.
     MAX_COOKIE_SIZE = 4096
@@ -215,9 +210,6 @@ module ActionDispatch
       # the cookie again. This is useful for creating cookies with values that the user is not supposed to change. If a signed
       # cookie was tampered with by the user (or a 3rd party), +nil+ will be returned.
       #
-      # If +secret_key_base+ and +secrets.secret_token+ (deprecated) are both set,
-      # legacy cookies signed with the old key generator will be transparently upgraded.
-      #
       # This jar requires that you set a suitable secret for the verification on your app's +secret_key_base+.
       #
       # Example:
@@ -232,9 +224,6 @@ module ActionDispatch
 
       # Returns a jar that'll automatically encrypt cookie values before sending them to the client and will decrypt them for read.
       # If the cookie was tampered with by the user (or a 3rd party), +nil+ will be returned.
-      #
-      # If +secret_key_base+ and +secrets.secret_token+ (deprecated) are both set,
-      # legacy cookies signed with the old key generator will be transparently upgraded.
       #
       # If +config.action_dispatch.encrypted_cookie_salt+ and +config.action_dispatch.encrypted_signed_cookie_salt+
       # are both set, legacy cookies encrypted with HMAC AES-256-CBC will be transparently upgraded.
@@ -263,10 +252,6 @@ module ActionDispatch
       end
 
       private
-
-        def upgrade_legacy_signed_cookies?
-          request.secret_token.present? && request.secret_key_base.present?
-        end
 
         def upgrade_legacy_hmac_aes_cbc_cookies?
           request.secret_key_base.present? &&
@@ -353,7 +338,7 @@ module ActionDispatch
 
       def update_cookies_from_jar
         request_jar = @request.cookie_jar.instance_variable_get(:@cookies)
-        set_cookies = request_jar.reject { |k, _| @delete_cookies.key?(k) }
+        set_cookies = request_jar.reject { |k, _| @delete_cookies.key?(k) || @set_cookies.key?(k) }
 
         @cookies.update set_cookies if set_cookies
       end
@@ -503,13 +488,8 @@ module ActionDispatch
         end
 
         def cookie_metadata(name, options)
-          if request.use_cookies_with_metadata
-            metadata = expiry_options(options)
-            metadata[:purpose] = "cookie.#{name}"
-
-            metadata
-          else
-            {}
+          expiry_options(options).tap do |metadata|
+            metadata[:purpose] = "cookie.#{name}" if request.use_cookies_with_metadata
           end
         end
 
@@ -535,7 +515,7 @@ module ActionDispatch
     end
 
     module SerializedCookieJars # :nodoc:
-      MARSHAL_SIGNATURE = "\x04\x08".freeze
+      MARSHAL_SIGNATURE = "\x04\x08"
       SERIALIZER = ActiveSupport::MessageEncryptor::NullSerializer
 
       protected
@@ -592,10 +572,6 @@ module ActionDispatch
         request.cookies_rotations.signed.each do |*secrets, **options|
           @verifier.rotate(*secrets, serializer: SERIALIZER, **options)
         end
-
-        if upgrade_legacy_signed_cookies?
-          @verifier.rotate request.secret_token, serializer: SERIALIZER
-        end
       end
 
       private
@@ -640,10 +616,6 @@ module ActionDispatch
 
           @encryptor.rotate(secret, sign_secret, cipher: legacy_cipher, digest: digest, serializer: SERIALIZER)
         end
-
-        if upgrade_legacy_signed_cookies?
-          @legacy_verifier = ActiveSupport::MessageVerifier.new(request.secret_token, digest: digest, serializer: SERIALIZER)
-        end
       end
 
       private
@@ -652,23 +624,13 @@ module ActionDispatch
             @encryptor.decrypt_and_verify(encrypted_message, on_rotation: rotate, purpose: purpose)
           end
         rescue ActiveSupport::MessageEncryptor::InvalidMessage, ActiveSupport::MessageVerifier::InvalidSignature
-          parse_legacy_signed_message(name, encrypted_message)
+          nil
         end
 
         def commit(name, options)
           options[:value] = @encryptor.encrypt_and_sign(serialize(options[:value]), cookie_metadata(name, options))
 
           raise CookieOverflow if options[:value].bytesize > MAX_COOKIE_SIZE
-        end
-
-        def parse_legacy_signed_message(name, legacy_signed_message)
-          if defined?(@legacy_verifier)
-            deserialize(name) do |rotate|
-              rotate.call
-
-              @legacy_verifier.verified(legacy_signed_message)
-            end
-          end
         end
     end
 

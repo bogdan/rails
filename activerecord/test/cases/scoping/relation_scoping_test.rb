@@ -130,6 +130,44 @@ class RelationScopingTest < ActiveRecord::TestCase
     end
   end
 
+  def test_scoped_find_with_annotation
+    Developer.annotate("scoped").scoping do
+      developer = nil
+      assert_sql(%r{/\* scoped \*/}) do
+        developer = Developer.where("name = 'David'").first
+      end
+      assert_equal "David", developer.name
+    end
+  end
+
+  def test_find_with_annotation_unscoped
+    Developer.annotate("scoped").unscoped do
+      developer = nil
+      log = capture_sql do
+        developer = Developer.where("name = 'David'").first
+      end
+
+      assert_not_predicate log, :empty?
+      assert_predicate log.select { |query| query.match?(%r{/\* scoped \*/}) }, :empty?
+
+      assert_equal "David", developer.name
+    end
+  end
+
+  def test_find_with_annotation_unscope
+    developer = nil
+    log = capture_sql do
+      developer = Developer.annotate("unscope").
+        where("name = 'David'").
+        unscope(:annotate).first
+    end
+
+    assert_not_predicate log, :empty?
+    assert_predicate log.select { |query| query.match?(%r{/\* unscope \*/}) }, :empty?
+
+    assert_equal "David", developer.name
+  end
+
   def test_scoped_find_include
     # with the include, will retrieve only developers for the given project
     scoped_developers = Developer.includes(:projects).scoping do
@@ -254,9 +292,14 @@ class RelationScopingTest < ActiveRecord::TestCase
     end
   end
 
-  def test_scoping_works_in_the_scope_block
+  def test_scoping_with_klass_method_works_in_the_scope_block
     expected = SpecialPostWithDefaultScope.unscoped.to_a
     assert_equal expected, SpecialPostWithDefaultScope.unscoped_all
+  end
+
+  def test_scoping_with_query_method_works_in_the_scope_block
+    expected = SpecialPostWithDefaultScope.unscoped.where(author_id: 0).to_a
+    assert_equal expected, SpecialPostWithDefaultScope.authorless
   end
 
   def test_circular_joins_with_scoping_does_not_crash

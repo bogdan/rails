@@ -115,6 +115,21 @@ class TestRoutingMapper < ActionDispatch::IntegrationTest
     assert_equal 301, status
   end
 
+  def test_accepts_a_constraint_object_responding_to_call
+    constraint = Class.new do
+      def call(*); true; end
+      def matches?(*); false; end
+    end
+
+    draw do
+      get "/", to: "home#show", constraints: constraint.new
+    end
+
+    assert_nothing_raised do
+      get "/"
+    end
+  end
+
   def test_namespace_with_controller_segment
     assert_raise(ArgumentError) do
       draw do
@@ -1364,6 +1379,22 @@ class TestRoutingMapper < ActionDispatch::IntegrationTest
     assert_equal "/en", projects_path(locale: "en")
     assert_equal "/", projects_path
     get "/en"
+    assert_equal "projects#index", @response.body
+  end
+
+  def test_optionally_scoped_root_unscoped_access
+    draw do
+      scope "(:locale)" do
+        scope "(:platform)" do
+          scope "(:browser)" do
+            root to: "projects#index"
+          end
+        end
+      end
+    end
+
+    assert_equal "/", root_path
+    get "/"
     assert_equal "projects#index", @response.body
   end
 
@@ -3307,6 +3338,16 @@ class TestRoutingMapper < ActionDispatch::IntegrationTest
     assert_equal "0c0c0b68-d24b-11e1-a861-001ff3fffe6f", @request.params[:download]
   end
 
+  def test_colon_containing_custom_param
+    ex = assert_raises(ArgumentError) {
+      draw do
+        resources :profiles, param: "username/:is_admin"
+      end
+    }
+
+    assert_match(/:param option can't contain colon/, ex.message)
+  end
+
   def test_action_from_path_is_not_frozen
     draw do
       get "search" => "search"
@@ -3667,15 +3708,25 @@ class TestRoutingMapper < ActionDispatch::IntegrationTest
     end
   end
 
-  def test_multiple_roots
-    draw do
-      namespace :foo do
+  def test_multiple_roots_raises_error
+    ex = assert_raises(ArgumentError) {
+      draw do
         root "pages#index", constraints: { host: "www.example.com" }
         root "admin/pages#index", constraints: { host: "admin.example.com" }
       end
+    }
+    assert_match(/Invalid route name, already in use: 'root'/, ex.message)
+  end
+
+  def test_multiple_named_roots
+    draw do
+      namespace :foo do
+        root "pages#index", constraints: { host: "www.example.com" }
+        root "admin/pages#index", constraints: { host: "admin.example.com" }, as: :admin_root
+      end
 
       root "pages#index", constraints: { host: "www.example.com" }
-      root "admin/pages#index", constraints: { host: "admin.example.com" }
+      root "admin/pages#index", constraints: { host: "admin.example.com" },  as: :admin_root
     end
 
     get "http://www.example.com/foo"
@@ -4950,8 +5001,12 @@ end
 
 class FlashRedirectTest < ActionDispatch::IntegrationTest
   SessionKey = "_myapp_session"
-  Generator  = ActiveSupport::LegacyKeyGenerator.new("b3c631c314c0bbca50c1b2843150fe33")
-  Rotations  = ActiveSupport::Messages::RotationConfiguration.new
+  Generator = ActiveSupport::CachingKeyGenerator.new(
+    ActiveSupport::KeyGenerator.new("b3c631c314c0bbca50c1b2843150fe33", iterations: 1000)
+  )
+  Rotations = ActiveSupport::Messages::RotationConfiguration.new
+  SIGNED_COOKIE_SALT = "signed cookie"
+  ENCRYPTED_SIGNED_COOKIE_SALT = "sigend encrypted cookie"
 
   class KeyGeneratorMiddleware
     def initialize(app)
@@ -4961,6 +5016,8 @@ class FlashRedirectTest < ActionDispatch::IntegrationTest
     def call(env)
       env["action_dispatch.key_generator"] ||= Generator
       env["action_dispatch.cookies_rotations"] ||= Rotations
+      env["action_dispatch.signed_cookie_salt"] = SIGNED_COOKIE_SALT
+      env["action_dispatch.encrypted_signed_cookie_salt"] = ENCRYPTED_SIGNED_COOKIE_SALT
 
       @app.call(env)
     end

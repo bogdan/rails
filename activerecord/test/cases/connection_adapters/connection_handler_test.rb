@@ -170,6 +170,11 @@ module ActiveRecord
         ActiveRecord::Base.configurations = config
         ActiveRecord::Base.configurations.configs_for.each do |db_config|
           assert_instance_of ActiveRecord::DatabaseConfigurations::HashConfig, db_config
+          assert_instance_of String, db_config.env_name
+          assert_instance_of String, db_config.spec_name
+          db_config.config.keys.each do |key|
+            assert_instance_of String, key
+          end
         end
       ensure
         ActiveRecord::Base.configurations = @prev_configs
@@ -376,6 +381,11 @@ module ActiveRecord
           klass2.remove_connection
           assert_not_nil ActiveRecord::Base.connection
           assert_same klass2.connection, ActiveRecord::Base.connection
+        end
+
+        def test_default_handlers_are_writing_and_reading
+          assert_equal :writing, ActiveRecord::Base.writing_role
+          assert_equal :reading, ActiveRecord::Base.reading_role
         end
       end
     end

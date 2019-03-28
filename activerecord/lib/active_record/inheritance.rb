@@ -180,7 +180,7 @@ module ActiveRecord
         # Returns the class type of the record using the current module as a prefix. So descendants of
         # MyApp::Business::Account would appear as MyApp::Business::AccountSubclass.
         def compute_type(type_name)
-          if type_name.start_with?("::".freeze)
+          if type_name.start_with?("::")
             # If the type is prefixed with a scope operator then we assume that
             # the type_name is an absolute reference.
             ActiveSupport::Dependencies.constantize(type_name)
@@ -249,7 +249,7 @@ module ActiveRecord
           sti_column = arel_attribute(inheritance_column, table)
           sti_names  = ([self] + descendants).map(&:sti_name)
 
-          sti_column.in(sti_names)
+          predicate_builder.build(sti_column, sti_names)
         end
 
         # Detect the subclass from the inheritance column of attrs. If the inheritance column value

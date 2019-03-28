@@ -38,7 +38,7 @@ If you're upgrading an existing application, it's a great idea to have good test
 
 Rails 3.0 requires Ruby 1.8.7 or higher. Support for all of the previous Ruby versions has been dropped officially and you should upgrade as early as possible. Rails 3.0 is also compatible with Ruby 1.9.2.
 
-TIP: Note that Ruby 1.8.7 p248 and p249 have marshaling bugs that crash Rails 3.0. Ruby Enterprise Edition have these fixed since release 1.8.7-2010.02 though. On the 1.9 front, Ruby 1.9.1 is not usable because it outright segfaults on Rails 3.0, so if you want to use Rails 3 with 1.9.x jump on 1.9.2 for smooth sailing.
+TIP: Note that Ruby 1.8.7 p248 and p249 have marshalling bugs that crash Rails 3.0. Ruby Enterprise Edition have these fixed since release 1.8.7-2010.02 though. On the 1.9 front, Ruby 1.9.1 is not usable because it outright segfaults on Rails 3.0, so if you want to use Rails 3 with 1.9.x jump on 1.9.2 for smooth sailing.
 
 ### Rails Application object
 
@@ -73,7 +73,7 @@ $ ruby script/plugin install git://github.com/rails/rails_upgrade.git
 
 You can see an example of how that works at [Rails Upgrade is now an Official Plugin](http://omgbloglol.com/post/364624593/rails-upgrade-is-now-an-official-plugin)
 
-Aside from Rails Upgrade tool, if you need more help, there are people on IRC and [rubyonrails-talk](http://groups.google.com/group/rubyonrails-talk) that are probably doing the same thing, possibly hitting the same issues. Be sure to blog your own experiences when upgrading so others can benefit from your knowledge!
+Aside from Rails Upgrade tool, if you need more help, there are people on IRC and [rubyonrails-talk](https://groups.google.com/group/rubyonrails-talk) that are probably doing the same thing, possibly hitting the same issues. Be sure to blog your own experiences when upgrading so others can benefit from your knowledge!
 
 Creating a Rails 3.0 application
 --------------------------------
@@ -607,6 +607,6 @@ More Information:
 Credits
 -------
 
-See the [full list of contributors to Rails](http://contributors.rubyonrails.org/) for the many people who spent many hours making Rails 3. Kudos to all of them.
+See the [full list of contributors to Rails](https://contributors.rubyonrails.org/) for the many people who spent many hours making Rails 3. Kudos to all of them.
 
 Rails 3.0 Release Notes were compiled by [Mikel Lindsaar](http://lindsaar.net).

@@ -50,7 +50,19 @@ module ActionDispatch
 
         private
           def constraint_args(constraint, request)
-            constraint.arity == 1 ? [request] : [request.path_parameters, request]
+            arity = if constraint.respond_to?(:arity)
+              constraint.arity
+            else
+              constraint.method(:call).arity
+            end
+
+            if arity < 1
+              []
+            elsif arity == 1
+              [request]
+            else
+              [request.path_parameters, request]
+            end
           end
       end
 
@@ -148,17 +160,8 @@ module ActionDispatch
         end
 
         def make_route(name, precedence)
-          route = Journey::Route.new(name,
-                            application,
-                            path,
-                            conditions,
-                            required_defaults,
-                            defaults,
-                            request_method,
-                            precedence,
-                            @internal)
-
-          route
+          Journey::Route.new(name, application, path, conditions, required_defaults,
+                             defaults, request_method, precedence, @internal)
         end
 
         def application
@@ -390,7 +393,7 @@ module ActionDispatch
       # for root cases, where the latter is the correct one.
       def self.normalize_path(path)
         path = Journey::Router::Utils.normalize_path(path)
-        path.gsub!(%r{/(\(+)/?}, '\1/') unless path =~ %r{^/\(+[^)]+\)$}
+        path.gsub!(%r{/(\(+)/?}, '\1/') unless path =~ %r{^/(\(+[^)]+\)){1,}$}
         path
       end
 
@@ -644,7 +647,7 @@ module ActionDispatch
 
         # Query if the following named route was already defined.
         def has_named_route?(name)
-          @set.named_routes.key? name
+          @set.named_routes.key?(name)
         end
 
         private
@@ -668,7 +671,7 @@ module ActionDispatch
 
             script_namer = ->(options) do
               prefix_options = options.slice(*_route.segment_keys)
-              prefix_options[:relative_url_root] = "".freeze
+              prefix_options[:relative_url_root] = ""
 
               if options[:_recall]
                 prefix_options.reverse_merge!(options[:_recall].slice(*_route.segment_keys))
@@ -1138,6 +1141,10 @@ module ActionDispatch
           attr_reader :controller, :path, :param
 
           def initialize(entities, api_only, shallow, options = {})
+            if options[:param].to_s.include?(":")
+              raise ArgumentError, ":param option can't contain colons"
+            end
+
             @name       = entities.to_s
             @path       = (options[:path] || @name).to_s
             @controller = (options[:controller] || @name).to_s
@@ -1159,10 +1166,16 @@ module ActionDispatch
           end
 
           def actions
+            if @except
+              available_actions - Array(@except).map(&:to_sym)
+            else
+              available_actions
+            end
+          end
+
+          def available_actions
             if @only
               Array(@only).map(&:to_sym)
-            elsif @except
-              default_actions - Array(@except).map(&:to_sym)
             else
               default_actions
             end
@@ -1430,6 +1443,9 @@ module ActionDispatch
         # [:format]
         #   Allows you to specify the default value for optional +format+
         #   segment or disable it by supplying +false+.
+        #
+        # [:param]
+        #   Allows you to override the default param name of +:id+ in the URL.
         #
         # === Examples
         #
@@ -1934,9 +1950,7 @@ module ActionDispatch
           end
 
           def match_root_route(options)
-            name = has_named_route?(name_for_action(:root, nil)) ? nil : :root
-            args = ["/", { as: name, via: :get }.merge!(options)]
-
+            args = ["/", { as: :root, via: :get }.merge(options)]
             match(*args)
           end
       end

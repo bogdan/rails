@@ -142,7 +142,7 @@ module ActiveRecord
       end
 
       def for_each
-        databases = Rails.application.config.database_configuration
+        databases = Rails.application.config.load_database_yaml
         database_configs = ActiveRecord::DatabaseConfigurations.new(databases).configs_for(env_name: Rails.env)
 
         # if this is a single database application we don't want tasks for each primary database
@@ -182,6 +182,25 @@ module ActiveRecord
         }
       end
 
+      def truncate_tables(configuration)
+        ActiveRecord::Base.connected_to(database: { truncation: configuration }) do
+          table_names = ActiveRecord::Base.connection.tables
+          table_names -= [
+            ActiveRecord::Base.schema_migrations_table_name,
+            ActiveRecord::Base.internal_metadata_table_name
+          ]
+
+          ActiveRecord::Base.connection.truncate_tables(*table_names)
+        end
+      end
+      private :truncate_tables
+
+      def truncate_all(environment = env)
+        ActiveRecord::Base.configurations.configs_for(env_name: environment).each do |db_config|
+          truncate_tables db_config.config
+        end
+      end
+
       def migrate
         check_target_version
 
@@ -195,6 +214,21 @@ module ActiveRecord
         ActiveRecord::Base.clear_cache!
       ensure
         Migration.verbose = verbose_was
+      end
+
+      def migrate_status
+        unless ActiveRecord::SchemaMigration.table_exists?
+          Kernel.abort "Schema migrations table does not exist yet."
+        end
+
+        # output
+        puts "\ndatabase: #{ActiveRecord::Base.connection_config[:database]}\n\n"
+        puts "#{'Status'.center(8)}  #{'Migration ID'.ljust(14)}  Migration Name"
+        puts "-" * 50
+        ActiveRecord::Base.connection.migration_context.migrations_status.each do |status, version, name|
+          puts "#{status.center(8)}  #{version.ljust(14)}  #{name}"
+        end
+        puts
       end
 
       def check_target_version
@@ -296,6 +330,16 @@ module ActiveRecord
         end
 
         ENV["SCHEMA"] || File.join(ActiveRecord::Tasks::DatabaseTasks.db_dir, filename)
+      end
+
+      def cache_dump_filename(namespace)
+        filename = if namespace == "primary"
+          "schema_cache.yml"
+        else
+          "#{namespace}_schema_cache.yml"
+        end
+
+        ENV["SCHEMA_CACHE"] || File.join(ActiveRecord::Tasks::DatabaseTasks.db_dir, filename)
       end
 
       def load_schema_current(format = ActiveRecord::Base.schema_format, file = nil, environment = env)

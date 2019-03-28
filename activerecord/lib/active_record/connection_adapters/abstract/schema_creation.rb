@@ -15,7 +15,7 @@ module ActiveRecord
         end
 
         delegate :quote_column_name, :quote_table_name, :quote_default_expression, :type_to_sql,
-          :options_include_default?, :supports_indexes_in_create?, :supports_foreign_keys_in_create?, :foreign_key_options,
+          :options_include_default?, :supports_indexes_in_create?, :supports_foreign_keys?, :foreign_key_options,
           to: :@conn, private: true
 
         private
@@ -39,7 +39,9 @@ module ActiveRecord
           end
 
           def visit_TableDefinition(o)
-            create_sql = +"CREATE#{' TEMPORARY' if o.temporary} TABLE #{quote_table_name(o.name)} "
+            create_sql = +"CREATE#{table_modifier_in_create(o)} TABLE "
+            create_sql << "IF NOT EXISTS " if o.if_not_exists
+            create_sql << "#{quote_table_name(o.name)} "
 
             statements = o.columns.map { |c| accept c }
             statements << accept(o.primary_keys) if o.primary_keys
@@ -48,7 +50,7 @@ module ActiveRecord
               statements.concat(o.indexes.map { |column_name, options| index_in_create(o.name, column_name, options) })
             end
 
-            if supports_foreign_keys_in_create?
+            if supports_foreign_keys?
               statements.concat(o.foreign_keys.map { |to_table, options| foreign_key_in_create(o.name, to_table, options) })
             end
 
@@ -119,7 +121,15 @@ module ActiveRecord
             sql
           end
 
+          # Returns any SQL string to go between CREATE and TABLE. May be nil.
+          def table_modifier_in_create(o)
+            " TEMPORARY" if o.temporary
+          end
+
           def foreign_key_in_create(from_table, to_table, options)
+            prefix = ActiveRecord::Base.table_name_prefix
+            suffix = ActiveRecord::Base.table_name_suffix
+            to_table = "#{prefix}#{to_table}#{suffix}"
             options = foreign_key_options(from_table, to_table, options)
             accept ForeignKeyDefinition.new(from_table, to_table, options)
           end

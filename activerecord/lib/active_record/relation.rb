@@ -5,7 +5,7 @@ module ActiveRecord
   class Relation
     MULTI_VALUE_METHODS  = [:includes, :eager_load, :preload, :select, :group,
                             :order, :joins, :left_outer_joins, :references,
-                            :extending, :unscope]
+                            :extending, :unscope, :optimizer_hints, :annotate]
 
     SINGLE_VALUE_METHODS = [:limit, :offset, :lock, :readonly, :reordering,
                             :reverse_order, :distinct, :create_with, :skip_query_cache]
@@ -44,6 +44,11 @@ module ActiveRecord
     end
 
     def bind_attribute(name, value) # :nodoc:
+      if reflection = klass._reflect_on_association(name)
+        name = reflection.foreign_key
+        value = value.read_attribute(reflection.klass.primary_key) unless value.nil?
+      end
+
       attr = arel_attribute(name)
       bind = predicate_builder.build_bind_attribute(attr.name, value)
       yield attr, bind
@@ -62,6 +67,7 @@ module ActiveRecord
     #   user = users.new { |user| user.name = 'Oscar' }
     #   user.name # => Oscar
     def new(attributes = nil, &block)
+      block = _deprecated_scope_block("new", &block)
       scoping { klass.new(attributes, &block) }
     end
 
@@ -87,7 +93,12 @@ module ActiveRecord
     #   users.create(name: nil) # validation on name
     #   # => #<User id: nil, name: nil, ...>
     def create(attributes = nil, &block)
-      scoping { klass.create(attributes, &block) }
+      if attributes.is_a?(Array)
+        attributes.collect { |attr| create(attr, &block) }
+      else
+        block = _deprecated_scope_block("create", &block)
+        scoping { klass.create(attributes, &block) }
+      end
     end
 
     # Similar to #create, but calls
@@ -97,7 +108,12 @@ module ActiveRecord
     # Expects arguments in the same format as
     # {ActiveRecord::Base.create!}[rdoc-ref:Persistence::ClassMethods#create!].
     def create!(attributes = nil, &block)
-      scoping { klass.create!(attributes, &block) }
+      if attributes.is_a?(Array)
+        attributes.collect { |attr| create!(attr, &block) }
+      else
+        block = _deprecated_scope_block("create!", &block)
+        scoping { klass.create!(attributes, &block) }
+      end
     end
 
     def first_or_create(attributes = nil, &block) # :nodoc:
@@ -163,7 +179,7 @@ module ActiveRecord
     # Attempts to create a record with the given attributes in a table that has a unique constraint
     # on one or several of its columns. If a row already exists with one or several of these
     # unique constraints, the exception such an insertion would normally raise is caught,
-    # and the existing record with those attributes is found using #find_by.
+    # and the existing record with those attributes is found using #find_by!.
     #
     # This is similar to #find_or_create_by, but avoids the problem of stale reads between the SELECT
     # and the INSERT, as that method needs to first query the table, then attempt to insert a row
@@ -173,7 +189,7 @@ module ActiveRecord
     #
     # * The underlying table must have the relevant columns defined with unique constraints.
     # * A unique constraint violation may be triggered by only one, or at least less than all,
-    #   of the given attributes. This means that the subsequent #find_by may fail to find a
+    #   of the given attributes. This means that the subsequent #find_by! may fail to find a
     #   matching record, which will then raise an <tt>ActiveRecord::RecordNotFound</tt> exception,
     #   rather than a record with the given attributes.
     # * While we avoid the race condition between SELECT -> INSERT from #find_or_create_by,
@@ -181,6 +197,10 @@ module ActiveRecord
     #   if a DELETE between those two statements is run by another client. But for most applications,
     #   that's a significantly less likely condition to hit.
     # * It relies on exception handling to handle control flow, which may be marginally slower.
+    # * The primary key may auto-increment on each create, even if it fails. This can accelerate
+    #   the problem of running out of integers, if the underlying table is still stuck on a primary
+    #   key of type int (note: All Rails apps since 5.1+ have defaulted to bigint, which is not liable
+    #   to this problem).
     #
     # This method will return a record if all given attributes are covered by unique constraints
     # (unless the INSERT -> DELETE -> SELECT race condition is triggered), but if creation was attempted
@@ -307,12 +327,12 @@ module ActiveRecord
     # Please check unscoped if you want to remove all previous scopes (including
     # the default_scope) during the execution of a block.
     def scoping
-      @delegate_to_klass ? yield : klass._scoping(self) { yield }
+      already_in_scope? ? yield : _scoping(self) { yield }
     end
 
-    def _exec_scope(*args, &block) # :nodoc:
+    def _exec_scope(name, *args, &block) # :nodoc:
       @delegate_to_klass = true
-      instance_exec(*args, &block) || self
+      _scoping(_deprecated_spawn(name)) { instance_exec(*args, &block) || self }
     ensure
       @delegate_to_klass = false
     end
@@ -321,6 +341,8 @@ module ActiveRecord
     # statement and sends it straight to the database. It does not instantiate the involved models and it does not
     # trigger Active Record callbacks or validations. However, values passed to #update_all will still go through
     # Active Record's normal type casting and serialization.
+    #
+    # Note: As Active Record callbacks are not triggered, this method will not automatically update +updated_at+/+updated_on+ columns.
     #
     # ==== Parameters
     #
@@ -348,18 +370,26 @@ module ActiveRecord
       end
 
       stmt = Arel::UpdateManager.new
+      stmt.table(arel.join_sources.empty? ? table : arel.source)
+      stmt.key = arel_attribute(primary_key)
+      stmt.take(arel.limit)
+      stmt.offset(arel.offset)
+      stmt.order(*arel.orders)
+      stmt.wheres = arel.constraints
 
-      stmt.set Arel.sql(@klass.sanitize_sql_for_assignment(updates, table.name))
-      stmt.table(table)
-
-      if has_join_values? || offset_value
-        @klass.connection.join_to_update(stmt, arel, arel_attribute(primary_key))
+      if updates.is_a?(Hash)
+        if klass.locking_enabled? &&
+            !updates.key?(klass.locking_column) &&
+            !updates.key?(klass.locking_column.to_sym)
+          attr = arel_attribute(klass.locking_column)
+          updates[attr.name] = _increment_attribute(attr)
+        end
+        stmt.set _substitute_values(updates)
       else
-        stmt.key = arel_attribute(primary_key)
-        stmt.take(arel.limit)
-        stmt.order(*arel.orders)
-        stmt.wheres = arel.constraints
+        stmt.set Arel.sql(klass.sanitize_sql_for_assignment(updates, table.name))
       end
+
+      stmt.comment(*arel.comment_node.values) if arel.comment_node
 
       @klass.connection.update stmt, "#{@klass} Update All"
     end
@@ -375,25 +405,25 @@ module ActiveRecord
     def update_counters(counters) # :nodoc:
       touch = counters.delete(:touch)
 
-      updates = counters.map do |counter_name, value|
-        operator = value < 0 ? "-" : "+"
-        quoted_column = connection.quote_table_name_for_assignment(table.name, counter_name)
-        "#{quoted_column} = COALESCE(#{quoted_column}, 0) #{operator} #{value.abs}"
+      updates = {}
+      counters.each do |counter_name, value|
+        attr = arel_attribute(counter_name)
+        updates[attr.name] = _increment_attribute(attr, value)
       end
 
       if touch
         names = touch if touch != true
         touch_updates = klass.touch_attributes_with_time(*names)
-        updates << klass.sanitize_sql_for_assignment(touch_updates, table.name) unless touch_updates.empty?
+        updates.merge!(touch_updates) unless touch_updates.empty?
       end
 
-      update_all updates.join(", ")
+      update_all updates
     end
 
-    # Touches all records in the current relation without instantiating records first with the updated_at/on attributes
+    # Touches all records in the current relation without instantiating records first with the +updated_at+/+updated_on+ attributes
     # set to the current time or the time specified.
     # This method can be passed attribute names and an optional time argument.
-    # If attribute names are passed, they are updated along with updated_at/on attributes.
+    # If attribute names are passed, they are updated along with +updated_at+/+updated_on+ attributes.
     # If no time argument is passed, the current time is used as default.
     #
     # === Examples
@@ -414,12 +444,7 @@ module ActiveRecord
     #   Person.where(name: 'David').touch_all
     #   # => "UPDATE \"people\" SET \"updated_at\" = '2018-01-04 22:55:23.132670' WHERE \"people\".\"name\" = 'David'"
     def touch_all(*names, time: nil)
-      if klass.locking_enabled?
-        names << { time: time }
-        update_counters(klass.locking_column => 1, touch: names)
-      else
-        update_all klass.touch_attributes_with_time(*names, time: time)
-      end
+      update_all klass.touch_attributes_with_time(*names, time: time)
     end
 
     # Destroys the records by instantiating each
@@ -475,18 +500,44 @@ module ActiveRecord
       end
 
       stmt = Arel::DeleteManager.new
-      stmt.from(table)
-
-      if has_join_values? || has_limit_or_offset?
-        @klass.connection.join_to_delete(stmt, arel, arel_attribute(primary_key))
-      else
-        stmt.wheres = arel.constraints
-      end
+      stmt.from(arel.join_sources.empty? ? table : arel.source)
+      stmt.key = arel_attribute(primary_key)
+      stmt.take(arel.limit)
+      stmt.offset(arel.offset)
+      stmt.order(*arel.orders)
+      stmt.wheres = arel.constraints
+      stmt.comment(*arel.comment_node.values) if arel.comment_node
 
       affected = @klass.connection.delete(stmt, "#{@klass} Destroy")
 
       reset
       affected
+    end
+
+    # Finds and destroys all records matching the specified conditions.
+    # This is short-hand for <tt>relation.where(condition).destroy_all</tt>.
+    # Returns the collection of objects that were destroyed.
+    #
+    # If no record is found, returns empty array.
+    #
+    #   Person.destroy_by(id: 13)
+    #   Person.destroy_by(name: 'Spartacus', rating: 4)
+    #   Person.destroy_by("published_at < ?", 2.weeks.ago)
+    def destroy_by(*args)
+      where(*args).destroy_all
+    end
+
+    # Finds and deletes all records matching the specified conditions.
+    # This is short-hand for <tt>relation.where(condition).delete_all</tt>.
+    # Returns the number of rows affected.
+    #
+    # If no record is found, returns <tt>0</tt> as zero rows were affected.
+    #
+    #   Person.delete_by(id: 13)
+    #   Person.delete_by(name: 'Spartacus', rating: 4)
+    #   Person.delete_by("published_at < ?", 2.weeks.ago)
+    def delete_by(*args)
+      where(*args).delete_all
     end
 
     # Causes the records to be loaded from the database if they have not
@@ -509,6 +560,7 @@ module ActiveRecord
 
     def reset
       @delegate_to_klass = false
+      @_deprecated_scope_source = nil
       @to_sql = @arel = @loaded = @should_eager_load = nil
       @records = [].freeze
       @offsets = {}
@@ -617,7 +669,10 @@ module ActiveRecord
       end
     end
 
+    attr_reader :_deprecated_scope_source # :nodoc:
+
     protected
+      attr_writer :_deprecated_scope_source # :nodoc:
 
       def load_records(records)
         @records = records.freeze
@@ -625,9 +680,47 @@ module ActiveRecord
       end
 
     private
+      def already_in_scope?
+        @delegate_to_klass && begin
+          scope = klass.current_scope(true)
+          scope && !scope._deprecated_scope_source
+        end
+      end
 
-      def has_join_values?
-        joins_values.any? || left_outer_joins_values.any?
+      def _deprecated_spawn(name)
+        spawn.tap { |scope| scope._deprecated_scope_source = name }
+      end
+
+      def _deprecated_scope_block(name, &block)
+        -> record do
+          klass.current_scope = _deprecated_spawn(name)
+          yield record if block_given?
+        end
+      end
+
+      def _scoping(scope)
+        previous, klass.current_scope = klass.current_scope(true), scope
+        yield
+      ensure
+        klass.current_scope = previous
+      end
+
+      def _substitute_values(values)
+        values.map do |name, value|
+          attr = arel_attribute(name)
+          unless Arel.arel_node?(value)
+            type = klass.type_for_attribute(attr.name)
+            value = predicate_builder.build_bind_attribute(attr.name, type.cast(value))
+          end
+          [attr, value]
+        end
+      end
+
+      def _increment_attribute(attribute, value = 1)
+        bind = predicate_builder.build_bind_attribute(attribute.name, value.abs)
+        expr = table.coalesce(Arel::Nodes::UnqualifiedColumn.new(attribute), 0)
+        expr = value < 0 ? expr - bind : expr + bind
+        expr.expr
       end
 
       def exec_queries(&block)

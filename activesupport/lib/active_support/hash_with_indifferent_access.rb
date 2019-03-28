@@ -2,6 +2,7 @@
 
 require "active_support/core_ext/hash/keys"
 require "active_support/core_ext/hash/reverse_merge"
+require "active_support/core_ext/hash/except"
 
 module ActiveSupport
   # Implements a hash where keys <tt>:foo</tt> and <tt>"foo"</tt> are considered
@@ -163,6 +164,19 @@ module ActiveSupport
       super(convert_key(key))
     end
 
+    # Same as <tt>Hash#assoc</tt> where the key passed as argument can be
+    # either a string or a symbol:
+    #
+    #   counters = ActiveSupport::HashWithIndifferentAccess.new
+    #   counters[:foo] = 1
+    #
+    #   counters.assoc('foo') # => ["foo", 1]
+    #   counters.assoc(:foo)  # => ["foo", 1]
+    #   counters.assoc(:zoo)  # => nil
+    def assoc(key)
+      super(convert_key(key))
+    end
+
     # Same as <tt>Hash#fetch</tt> where the key passed as argument can be
     # either a string or a symbol:
     #
@@ -279,6 +293,8 @@ module ActiveSupport
       super(convert_key(key))
     end
 
+    alias_method :without, :except
+
     def stringify_keys!; self end
     def deep_stringify_keys!; self end
     def stringify_keys; dup end
@@ -286,6 +302,7 @@ module ActiveSupport
     undef :symbolize_keys!
     undef :deep_symbolize_keys!
     def symbolize_keys; to_hash.symbolize_keys! end
+    alias_method :to_options, :symbolize_keys
     def deep_symbolize_keys; to_hash.deep_symbolize_keys! end
     def to_options!; self end
 

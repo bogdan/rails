@@ -88,7 +88,7 @@ task default: :test
 
     PASSTHROUGH_OPTIONS = [
       :skip_active_record, :skip_active_storage, :skip_action_mailer, :skip_javascript, :skip_action_cable, :skip_sprockets, :database,
-      :javascript, :skip_yarn, :api, :quiet, :pretend, :skip
+      :api, :quiet, :pretend, :skip
     ]
 
     def generate_test_dummy(force = false)
@@ -98,6 +98,7 @@ task default: :test
       opts[:skip_listen] = true
       opts[:skip_git] = true
       opts[:skip_turbolinks] = true
+      opts[:skip_webpack_install] = true
       opts[:dummy_app] = true
 
       invoke Rails::Generators::AppGenerator,
@@ -113,7 +114,7 @@ task default: :test
     end
 
     def test_dummy_assets
-      template "rails/javascripts.js",    "#{dummy_path}/app/assets/javascripts/application.js", force: true
+      template "rails/javascripts.js",    "#{dummy_path}/app/javascript/packs/application.js", force: true
       template "rails/stylesheets.css",   "#{dummy_path}/app/assets/stylesheets/application.css", force: true
       template "rails/dummy_manifest.js", "#{dummy_path}/app/assets/config/manifest.js", force: true
     end
@@ -262,16 +263,6 @@ task default: :test
 
       public_task :apply_rails_template
 
-      def run_after_bundle_callbacks
-        unless @after_bundle_callbacks.empty?
-          ActiveSupport::Deprecation.warn("`after_bundle` is deprecated and will be removed in the next version of Rails. ")
-        end
-
-        @after_bundle_callbacks.each do |callback|
-          callback.call
-        end
-      end
-
       def name
         @name ||= begin
           # same as ActiveSupport::Inflector#underscore except not replacing '-'
@@ -348,9 +339,9 @@ task default: :test
       def wrap_in_modules(unwrapped_code)
         unwrapped_code = "#{unwrapped_code}".strip.gsub(/\s$\n/, "")
         modules.reverse.inject(unwrapped_code) do |content, mod|
-          str = "module #{mod}\n"
-          str += content.lines.map { |line| "  #{line}" }.join
-          str += content.present? ? "\nend" : "end"
+          str = +"module #{mod}\n"
+          str << content.lines.map { |line| "  #{line}" }.join
+          str << (content.present? ? "\nend" : "end")
         end
       end
 

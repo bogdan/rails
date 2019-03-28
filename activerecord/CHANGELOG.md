@@ -3,6 +3,571 @@
 
     *Dinah Shi*
 
+*   Add `ActiveRecord::Relation#annotate` for adding SQL comments to its queries.
+
+    For example:
+
+    ```
+    Post.where(id: 123).annotate("this is a comment").to_sql
+    # SELECT "posts".* FROM "posts" WHERE "posts"."id" = 123 /* this is a comment */
+    ```
+
+    This can be useful in instrumentation or other analysis of issued queries.
+
+    *Matt Yoho*
+
+*   Support Optimizer Hints.
+
+    In most databases, a way to control the optimizer is by using optimizer hints,
+    which can be specified within individual statements.
+
+    Example (for MySQL):
+
+        Topic.optimizer_hints("MAX_EXECUTION_TIME(50000)", "NO_INDEX_MERGE(topics)")
+        # SELECT /*+ MAX_EXECUTION_TIME(50000) NO_INDEX_MERGE(topics) */ `topics`.* FROM `topics`
+
+    Example (for PostgreSQL with pg_hint_plan):
+
+        Topic.optimizer_hints("SeqScan(topics)", "Parallel(topics 8)")
+        # SELECT /*+ SeqScan(topics) Parallel(topics 8) */ "topics".* FROM "topics"
+
+    See also:
+
+    * https://dev.mysql.com/doc/refman/8.0/en/optimizer-hints.html
+    * https://pghintplan.osdn.jp/pg_hint_plan.html
+    * https://docs.oracle.com/en/database/oracle/oracle-database/12.2/tgsql/influencing-the-optimizer.html
+    * https://docs.microsoft.com/en-us/sql/t-sql/queries/hints-transact-sql-query?view=sql-server-2017
+    * https://www.ibm.com/support/knowledgecenter/en/SSEPGG_11.1.0/com.ibm.db2.luw.admin.perf.doc/doc/c0070117.html
+
+    *Ryuta Kamizono*
+
+*   Fix query attribute method on user-defined attribute to be aware of typecasted value.
+
+    For example, the following code no longer return false as casted non-empty string:
+
+    ```
+    class Post < ActiveRecord::Base
+      attribute :user_defined_text, :text
+    end
+
+    Post.new(user_defined_text: "false").user_defined_text? # => true
+    ```
+
+    *Yuji Kamijima*
+
+*   Quote empty ranges like other empty enumerables.
+
+    *Patrick Rebsch*
+
+*   Add `insert_all`/`insert_all!`/`upsert_all` methods to `ActiveRecord::Persistence`,
+    allowing bulk inserts akin to the bulk updates provided by `update_all` and
+    bulk deletes by `delete_all`.
+
+    Supports skipping or upserting duplicates through the `ON CONFLICT` syntax
+    for Postgres (9.5+) and Sqlite (3.24+) and `ON DUPLICATE KEY UPDATE` syntax
+    for MySQL.
+
+    *Bob Lail*
+
+*   Add `rails db:seed:replant` that truncates tables of each database
+    for current environment and loads the seeds.
+
+    *bogdanvlviv*, *DHH*
+
+*   Add `ActiveRecord::Base.connection.truncate` for SQLite3 adapter.
+
+    *bogdanvlviv*
+
+*   Deprecate mismatched collation comparison for uniqueness validator.
+
+    Uniqueness validator will no longer enforce case sensitive comparison in Rails 6.1.
+    To continue case sensitive comparison on the case insensitive column,
+    pass `case_sensitive: true` option explicitly to the uniqueness validator.
+
+    *Ryuta Kamizono*
+
+*   Add `reselect` method. This is a short-hand for `unscope(:select).select(fields)`.
+
+    Fixes #27340.
+
+    *Willian Gustavo Veiga*
+
+*   Add negative scopes for all enum values.
+
+    Example:
+
+        class Post < ActiveRecord::Base
+          enum status: %i[ drafted active trashed ]
+        end
+
+        Post.not_drafted # => where.not(status: :drafted)
+        Post.not_active  # => where.not(status: :active)
+        Post.not_trashed # => where.not(status: :trashed)
+
+    *DHH*
+
+*   Fix different `count` calculation when using `size` with manual `select` with DISTINCT.
+
+    Fixes #35214.
+
+    *Juani Villarejo*
+
+
+## Rails 6.0.0.beta3 (March 11, 2019) ##
+
+*   No changes.
+
+
+## Rails 6.0.0.beta2 (February 25, 2019) ##
+
+*   Fix prepared statements caching to be enabled even when query caching is enabled.
+
+    *Ryuta Kamizono*
+
+*   Ensure `update_all` series cares about optimistic locking.
+
+    *Ryuta Kamizono*
+
+*   Don't allow `where` with non numeric string matches to 0 values.
+
+    *Ryuta Kamizono*
+
+*   Introduce `ActiveRecord::Relation#destroy_by` and `ActiveRecord::Relation#delete_by`.
+
+    `destroy_by` allows relation to find all the records matching the condition and perform
+    `destroy_all` on the matched records.
+
+    Example:
+
+        Person.destroy_by(name: 'David')
+        Person.destroy_by(name: 'David', rating: 4)
+
+        david = Person.find_by(name: 'David')
+        david.posts.destroy_by(id: [1, 2, 3])
+
+    `delete_by` allows relation to find all the records matching the condition and perform
+    `delete_all` on the matched records.
+
+    Example:
+
+        Person.delete_by(name: 'David')
+        Person.delete_by(name: 'David', rating: 4)
+
+        david = Person.find_by(name: 'David')
+        david.posts.delete_by(id: [1, 2, 3])
+
+    *Abhay Nikam*
+
+*   Don't allow `where` with invalid value matches to nil values.
+
+    Fixes #33624.
+
+    *Ryuta Kamizono*
+
+*   SQLite3: Implement `add_foreign_key` and `remove_foreign_key`.
+
+    *Ryuta Kamizono*
+
+*   Deprecate using class level querying methods if the receiver scope
+    regarded as leaked. Use `klass.unscoped` to avoid the leaking scope.
+
+    *Ryuta Kamizono*
+
+*   Allow applications to automatically switch connections.
+
+    Adds a middleware and configuration options that can be used in your
+    application to automatically switch between the writing and reading
+    database connections.
+
+    `GET` and `HEAD` requests will read from the replica unless there was
+    a write in the last 2 seconds, otherwise they will read from the primary.
+    Non-get requests will always write to the primary. The middleware accepts
+    an argument for a Resolver class and a Operations class where you are able
+    to change how the auto-switcher works to be most beneficial for your
+    application.
+
+    To use the middleware in your application you can use the following
+    configuration options:
+
+    ```
+    config.active_record.database_selector = { delay: 2.seconds }
+    config.active_record.database_resolver = ActiveRecord::Middleware::DatabaseSelector::Resolver
+    config.active_record.database_resolver_context = ActiveRecord::Middleware::DatabaseSelector::Resolver::Session
+    ```
+
+    To change the database selection strategy, pass a custom class to the
+    configuration options:
+
+    ```
+    config.active_record.database_selector = { delay: 10.seconds }
+    config.active_record.database_resolver = MyResolver
+    config.active_record.database_resolver_context = MyResolver::MyCookies
+    ```
+
+    *Eileen M. Uchitelle*
+
+*   MySQL: Support `:size` option to change text and blob size.
+
+    *Ryuta Kamizono*
+
+*   Make `t.timestamps` with precision by default.
+
+    *Ryuta Kamizono*
+
+
+## Rails 6.0.0.beta1 (January 18, 2019) ##
+
+*   Remove deprecated `#set_state` from the transaction object.
+
+    *Rafael Mendonça França*
+
+*   Remove deprecated `#supports_statement_cache?` from the database adapters.
+
+    *Rafael Mendonça França*
+
+*   Remove deprecated `#insert_fixtures` from the database adapters.
+
+    *Rafael Mendonça França*
+
+*   Remove deprecated `ActiveRecord::ConnectionAdapters::SQLite3Adapter#valid_alter_table_type?`.
+
+    *Rafael Mendonça França*
+
+*   Do not allow passing the column name to `sum` when a block is passed.
+
+    *Rafael Mendonça França*
+
+*   Do not allow passing the column name to `count` when a block is passed.
+
+    *Rafael Mendonça França*
+
+*   Remove delegation of missing methods in a relation to arel.
+
+    *Rafael Mendonça França*
+
+*   Remove delegation of missing methods in a relation to private methods of the class.
+
+    *Rafael Mendonça França*
+
+*   Deprecate `config.activerecord.sqlite3.represent_boolean_as_integer`.
+
+    *Rafael Mendonça França*
+
+*   Change `SQLite3Adapter` to always represent boolean values as integers.
+
+    *Rafael Mendonça França*
+
+*   Remove ability to specify a timestamp name for `#cache_key`.
+
+    *Rafael Mendonça França*
+
+*   Remove deprecated `ActiveRecord::Migrator.migrations_path=`.
+
+    *Rafael Mendonça França*
+
+*   Remove deprecated `expand_hash_conditions_for_aggregates`.
+
+    *Rafael Mendonça França*
+
+*   Set polymorphic type column to NULL on `dependent: :nullify` strategy.
+
+    On polymorphic associations both the foreign key and the foreign type columns will be set to NULL.
+
+    *Laerti Papa*
+
+*   Allow permitted instance of `ActionController::Parameters` as argument of `ActiveRecord::Relation#exists?`.
+
+    *Gannon McGibbon*
+
+*   Add support for endless ranges introduces in Ruby 2.6.
+
+    *Greg Navis*
+
+*   Deprecate passing `migrations_paths` to `connection.assume_migrated_upto_version`.
+
+    *Ryuta Kamizono*
+
+*   MySQL: `ROW_FORMAT=DYNAMIC` create table option by default.
+
+    Since MySQL 5.7.9, the `innodb_default_row_format` option defines the default row
+    format for InnoDB tables. The default setting is `DYNAMIC`.
+    The row format is required for indexing on `varchar(255)` with `utf8mb4` columns.
+
+    *Ryuta Kamizono*
+
+*   Fix join table column quoting with SQLite.
+
+    *Gannon McGibbon*
+
+*   Allow disabling scopes generated by `ActiveRecord.enum`.
+
+    *Alfred Dominic*
+
+*   Ensure that `delete_all` on collection proxy returns affected count.
+
+    *Ryuta Kamizono*
+
+*   Reset scope after delete on collection association to clear stale offsets of removed records.
+
+    *Gannon McGibbon*
+
+*   Add the ability to prevent writes to a database for the duration of a block.
+
+    Allows the application to prevent writes to a database. This can be useful when
+    you're building out multiple databases and want to make sure you're not sending
+    writes when you want a read.
+
+    If `while_preventing_writes` is called and the query is considered a write
+    query the database will raise an exception regardless of whether the database
+    user is able to write.
+
+    This is not meant to be a catch-all for write queries but rather a way to enforce
+    read-only queries without opening a second connection. One purpose of this is to
+    catch accidental writes, not all writes.
+
+    *Eileen M. Uchitelle*
+
+*   Allow aliased attributes to be used in `#update_columns` and `#update`.
+
+    *Gannon McGibbon*
+
+*   Allow spaces in postgres table names.
+
+    Fixes issue where "user post" is misinterpreted as "\"user\".\"post\"" when quoting table names with the postgres adapter.
+
+    *Gannon McGibbon*
+
+*   Cached columns_hash fields should be excluded from ResultSet#column_types
+
+    PR #34528 addresses the inconsistent behaviour when attribute is defined for an ignored column. The following test
+    was passing for SQLite and MySQL, but failed for PostgreSQL:
+
+    ```ruby
+    class DeveloperName < ActiveRecord::Type::String
+      def deserialize(value)
+        "Developer: #{value}"
+      end
+    end
+
+    class AttributedDeveloper < ActiveRecord::Base
+      self.table_name = "developers"
+
+      attribute :name, DeveloperName.new
+
+      self.ignored_columns += ["name"]
+    end
+
+    developer = AttributedDeveloper.create
+    developer.update_column :name, "name"
+
+    loaded_developer = AttributedDeveloper.where(id: developer.id).select("*").first
+    puts loaded_developer.name # should be "Developer: name" but it's just "name"
+    ```
+
+    *Dmitry Tsepelev*
+
+*   Make the implicit order column configurable.
+
+    When calling ordered finder methods such as +first+ or +last+ without an
+    explicit order clause, ActiveRecord sorts records by primary key. This can
+    result in unpredictable and surprising behaviour when the primary key is
+    not an auto-incrementing integer, for example when it's a UUID. This change
+    makes it possible to override the column used for implicit ordering such
+    that +first+ and +last+ will return more predictable results.
+
+    Example:
+
+        class Project < ActiveRecord::Base
+          self.implicit_order_column = "created_at"
+        end
+
+    *Tekin Suleyman*
+
+*   Bump minimum PostgreSQL version to 9.3.
+
+    *Yasuo Honda*
+
+*   Values of enum are frozen, raising an error when attempting to modify them.
+
+    *Emmanuel Byrd*
+
+*   Move `ActiveRecord::StatementInvalid` SQL to error property and include binds as separate error property.
+
+    `ActiveRecord::ConnectionAdapters::AbstractAdapter#translate_exception_class` now requires `binds` to be passed as the last argument.
+
+    `ActiveRecord::ConnectionAdapters::AbstractAdapter#translate_exception` now requires `message`, `sql`, and `binds` to be passed as keyword arguments.
+
+    Subclasses of `ActiveRecord::StatementInvalid` must now provide `sql:` and `binds:` arguments to `super`.
+
+    Example:
+
+    ```
+    class MySubclassedError < ActiveRecord::StatementInvalid
+      def initialize(message, sql:, binds:)
+        super(message, sql: sql, binds: binds)
+      end
+    end
+    ```
+
+    *Gannon McGibbon*
+
+*   Add an `:if_not_exists` option to `create_table`.
+
+    Example:
+
+        create_table :posts, if_not_exists: true do |t|
+          t.string :title
+        end
+
+    That would execute:
+
+        CREATE TABLE IF NOT EXISTS posts (
+          ...
+        )
+
+    If the table already exists, `if_not_exists: false` (the default) raises an
+    exception whereas `if_not_exists: true` does nothing.
+
+    *fatkodima*, *Stefan Kanev*
+
+*   Defining an Enum as a Hash with blank key, or as an Array with a blank value, now raises an `ArgumentError`.
+
+    *Christophe Maximin*
+
+*   Adds support for multiple databases to `rails db:schema:cache:dump` and `rails db:schema:cache:clear`.
+
+    *Gannon McGibbon*
+
+*   `update_columns` now correctly raises `ActiveModel::MissingAttributeError`
+    if the attribute does not exist.
+
+    *Sean Griffin*
+
+*   Add support for hash and url configs in database hash of `ActiveRecord::Base.connected_to`.
+
+    ````
+    User.connected_to(database: { writing: "postgres://foo" }) do
+      User.create!(name: "Gannon")
+    end
+
+    config = { "adapter" => "sqlite3", "database" => "db/readonly.sqlite3" }
+    User.connected_to(database: { reading: config }) do
+      User.count
+    end
+    ````
+
+    *Gannon McGibbon*
+
+*   Support default expression for MySQL.
+
+    MySQL 8.0.13 and higher supports default value to be a function or expression.
+
+    https://dev.mysql.com/doc/refman/8.0/en/create-table.html
+
+    *Ryuta Kamizono*
+
+*   Support expression indexes for MySQL.
+
+    MySQL 8.0.13 and higher supports functional key parts that index
+    expression values rather than column or column prefix values.
+
+    https://dev.mysql.com/doc/refman/8.0/en/create-index.html
+
+    *Ryuta Kamizono*
+
+*   Fix collection cache key with limit and custom select to avoid ambiguous timestamp column error.
+
+    Fixes #33056.
+
+    *Federico Martinez*
+
+*   Add basic API for connection switching to support multiple databases.
+
+    1) Adds a `connects_to` method for models to connect to multiple databases. Example:
+
+    ```
+    class AnimalsModel < ApplicationRecord
+      self.abstract_class = true
+
+      connects_to database: { writing: :animals_primary, reading: :animals_replica }
+    end
+
+    class Dog < AnimalsModel
+      # connected to both the animals_primary db for writing and the animals_replica for reading
+    end
+    ```
+
+    2) Adds a `connected_to` block method for switching connection roles or connecting to
+    a database that the model didn't connect to. Connecting to the database in this block is
+    useful when you have another defined connection, for example `slow_replica` that you don't
+    want to connect to by default but need in the console, or a specific code block.
+
+    ```
+    ActiveRecord::Base.connected_to(role: :reading) do
+      Dog.first # finds dog from replica connected to AnimalsBase
+      Book.first # doesn't have a reading connection, will raise an error
+    end
+    ```
+
+    ```
+    ActiveRecord::Base.connected_to(database: :slow_replica) do
+      SlowReplicaModel.first # if the db config has a slow_replica configuration this will be used to do the lookup, otherwise this will throw an exception
+    end
+    ```
+
+    *Eileen M. Uchitelle*
+
+*   Enum raises on invalid definition values
+
+    When defining a Hash enum it can be easy to use [] instead of {}. This
+    commit checks that only valid definition values are provided, those can
+    be a Hash, an array of Symbols or an array of Strings. Otherwise it
+    raises an ArgumentError.
+
+    Fixes #33961
+
+    *Alberto Almagro*
+
+*   Reloading associations now clears the Query Cache like `Persistence#reload` does.
+
+    ```
+    class Post < ActiveRecord::Base
+      has_one :category
+      belongs_to :author
+      has_many :comments
+    end
+
+    # Each of the following will now clear the query cache.
+    post.reload_category
+    post.reload_author
+    post.comments.reload
+    ```
+
+    *Christophe Maximin*
+
+*   Added `index` option for `change_table` migration helpers.
+    With this change you can create indexes while adding new
+    columns into the existing tables.
+
+    Example:
+
+        change_table(:languages) do |t|
+          t.string :country_code, index: true
+        end
+
+    *Mehmet Emin İNAÇ*
+
+*   Fix `transaction` reverting for migrations.
+
+    Before: Commands inside a `transaction` in a reverted migration ran uninverted.
+    Now: This change fixes that by reverting commands inside `transaction` block.
+
+    *fatkodima*, *David Verhasselt*
+
+*   Raise an error instead of scanning the filesystem root when `fixture_path` is blank.
+
+    *Gannon McGibbon*, *Max Albrecht*
+
 *   Allow `ActiveRecord::Base.configurations=` to be set with a symbolized hash.
 
     *Gannon McGibbon*
@@ -56,13 +621,13 @@
     specify sensitive attributes to specific model.
 
     ```
-    Rails.application.config.filter_parameters += [:credit_card_number]
-    Account.last.inspect # => #<Account id: 123, name: "DHH", credit_card_number: [FILTERED] ...>
+    Rails.application.config.filter_parameters += [:credit_card_number, /phone/]
+    Account.last.inspect # => #<Account id: 123, name: "DHH", credit_card_number: [FILTERED], telephone_number: [FILTERED] ...>
     SecureAccount.filter_attributes += [:name]
     SecureAccount.last.inspect # => #<SecureAccount id: 42, name: [FILTERED], credit_card_number: [FILTERED] ...>
     ```
 
-    *Zhang Kang*
+    *Zhang Kang*, *Yoshiyuki Kinjo*
 
 *   Deprecate `column_name_length`, `table_name_length`, `columns_per_table`,
     `indexes_per_table`, `columns_per_multicolumn_index`, `sql_query_length`,
@@ -106,8 +671,8 @@
 
     Iterating over the database configurations has also changed. Instead of
     calling hash methods on the `configurations` hash directly, a new method `configs_for` has
-    been provided that allows you to select the correct configuration. `env_name`, and
-    `spec_name` arguments are optional. For example these return an array of
+    been provided that allows you to select the correct configuration. `env_name` and
+    `spec_name` arguments are optional. For example, these return an array of
     database config objects for the requested environment and a single database config object
     will be returned for the requested environment and specification name respectively.
 
@@ -198,9 +763,9 @@
 
     *Tan Huynh*, *Yukio Mizuta*
 
-*   Rails 6 requires Ruby 2.4.1 or newer.
+*   Rails 6 requires Ruby 2.5.0 or newer.
 
-    *Jeremy Daer*
+    *Jeremy Daer*, *Kasper Timm Hansen*
 
 *   Deprecate `update_attributes`/`!` in favor of `update`/`!`.
 

@@ -22,18 +22,9 @@ module ActiveRecord
       delegate :column_for_attribute, to: :class
     end
 
-    AttrNames = Module.new {
-      def self.set_name_cache(name, value)
-        const_name = "ATTR_#{name}"
-        unless const_defined? const_name
-          const_set const_name, -value
-        end
-      end
-    }
-
     RESTRICTED_CLASS_METHODS = %w(private public protected allocate new name parent superclass)
 
-    class GeneratedAttributeMethods < Module #:nodoc:
+    class GeneratedAttributeMethodsBuilder < Module #:nodoc:
       include Mutex_m
     end
 
@@ -44,7 +35,8 @@ module ActiveRecord
       end
 
       def initialize_generated_modules # :nodoc:
-        @generated_attribute_methods = GeneratedAttributeMethods.new
+        @generated_attribute_methods = const_set(:GeneratedAttributeMethods, GeneratedAttributeMethodsBuilder.new)
+        private_constant :GeneratedAttributeMethods
         @attribute_methods_generated = false
         include @generated_attribute_methods
 
@@ -97,7 +89,7 @@ module ActiveRecord
           # If ThisClass < ... < SomeSuperClass < ... < Base and SomeSuperClass
           # defines its own attribute method, then we don't want to overwrite that.
           defined = method_defined_within?(method_name, superclass, Base) &&
-            ! superclass.instance_method(method_name).owner.is_a?(GeneratedAttributeMethods)
+            ! superclass.instance_method(method_name).owner.is_a?(GeneratedAttributeMethodsBuilder)
           defined || super
         end
       end
@@ -194,9 +186,7 @@ module ActiveRecord
 
       def disallow_raw_sql!(args, permit: COLUMN_NAME) # :nodoc:
         unexpected = args.reject do |arg|
-          arg.kind_of?(Arel::Node) ||
-            arg.is_a?(Arel::Nodes::SqlLiteral) ||
-            arg.is_a?(Arel::Attributes::Attribute) ||
+          Arel.arel_node?(arg) ||
             arg.to_s.split(/\s*,\s*/).all? { |part| permit.match?(part) }
         end
 
@@ -272,21 +262,14 @@ module ActiveRecord
     def respond_to?(name, include_private = false)
       return false unless super
 
-      case name
-      when :to_partial_path
-        name = "to_partial_path".freeze
-      when :to_model
-        name = "to_model".freeze
-      else
-        name = name.to_s
-      end
-
       # If the result is true then check for the select case.
       # For queries selecting a subset of columns, return false for unselected columns.
       # We check defined?(@attributes) not to issue warnings if called on objects that
       # have been allocated but not yet initialized.
-      if defined?(@attributes) && self.class.column_names.include?(name)
-        return has_attribute?(name)
+      if defined?(@attributes)
+        if name = self.class.symbol_column_to_string(name.to_sym)
+          return has_attribute?(name)
+        end
       end
 
       true
@@ -346,15 +329,8 @@ module ActiveRecord
     #   person.attribute_for_inspect(:tag_ids)
     #   # => "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]"
     def attribute_for_inspect(attr_name)
-      value = read_attribute(attr_name)
-
-      if value.is_a?(String) && value.length > 50
-        "#{value[0, 50]}...".inspect
-      elsif value.is_a?(Date) || value.is_a?(Time)
-        %("#{value.to_s(:db)}")
-      else
-        value.inspect
-      end
+      value = _read_attribute(attr_name)
+      format_for_inspect(value)
     end
 
     # Returns +true+ if the specified +attribute+ has been set by the user or by a
@@ -471,6 +447,16 @@ module ActiveRecord
         attribute_names &= self.class.column_names
         attribute_names.delete_if do |name|
           pk_attribute?(name) && id.nil?
+        end
+      end
+
+      def format_for_inspect(value)
+        if value.is_a?(String) && value.length > 50
+          "#{value[0, 50]}...".inspect
+        elsif value.is_a?(Date) || value.is_a?(Time)
+          %("#{value.to_s(:db)}")
+        else
+          value.inspect
         end
       end
 

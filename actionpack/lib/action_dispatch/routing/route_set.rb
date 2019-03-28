@@ -90,11 +90,11 @@ module ActionDispatch
 
         def clear!
           @path_helpers.each do |helper|
-            @path_helpers_module.send :remove_method, helper
+            @path_helpers_module.remove_method helper
           end
 
           @url_helpers.each do |helper|
-            @url_helpers_module.send  :remove_method, helper
+            @url_helpers_module.remove_method helper
           end
 
           @routes.clear
@@ -108,8 +108,8 @@ module ActionDispatch
           url_name  = :"#{name}_url"
 
           if routes.key? key
-            @path_helpers_module.send :undef_method, path_name
-            @url_helpers_module.send  :undef_method, url_name
+            @path_helpers_module.undef_method path_name
+            @url_helpers_module.undef_method url_name
           end
           routes[key] = route
           define_url_helper @path_helpers_module, route, path_name, route.defaults, name, PATH
@@ -377,7 +377,7 @@ module ActionDispatch
         @prepend                    = []
         @disable_clear_and_finalize = false
         @finalized                  = false
-        @env_key                    = "ROUTES_#{object_id}_SCRIPT_NAME".freeze
+        @env_key                    = "ROUTES_#{object_id}_SCRIPT_NAME"
 
         @set    = Journey::Routes.new
         @router = Journey::Router.new @set
@@ -729,7 +729,7 @@ module ActionDispatch
         # Remove leading slashes from controllers
         def normalize_controller!
           if controller
-            if controller.start_with?("/".freeze)
+            if controller.start_with?("/")
               @options[:controller] = controller[1..-1]
             else
               @options[:controller] = controller

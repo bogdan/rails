@@ -29,7 +29,7 @@ module ActiveRecord
       NATIVE_DATABASE_TYPES = {
         primary_key: "bigint auto_increment PRIMARY KEY",
         string:      { name: "varchar", limit: 255 },
-        text:        { name: "text", limit: 65535 },
+        text:        { name: "text" },
         integer:     { name: "int", limit: 4 },
         float:       { name: "float", limit: 24 },
         decimal:     { name: "decimal" },
@@ -37,7 +37,8 @@ module ActiveRecord
         timestamp:   { name: "timestamp" },
         time:        { name: "time" },
         date:        { name: "date" },
-        binary:      { name: "blob", limit: 65535 },
+        binary:      { name: "blob" },
+        blob:        { name: "blob" },
         boolean:     { name: "tinyint", limit: 1 },
         json:        { name: "json" },
       }
@@ -52,12 +53,6 @@ module ActiveRecord
 
       def initialize(connection, logger, connection_options, config)
         super(connection, logger, config)
-
-        @statements = StatementPool.new(self.class.type_cast_config_to_integer(config[:statement_limit]))
-
-        if version < "5.5.8"
-          raise "Your version of MySQL (#{version_string}) is too old. Active Record supports MySQL >= 5.5.8."
-        end
       end
 
       def version #:nodoc:
@@ -74,6 +69,10 @@ module ActiveRecord
 
       def supports_index_sort_order?
         !mariadb? && version >= "8.0.1"
+      end
+
+      def supports_expression_index?
+        !mariadb? && version >= "8.0.13"
       end
 
       def supports_transaction_isolation?
@@ -97,31 +96,28 @@ module ActiveRecord
       end
 
       def supports_datetime_with_precision?
-        if mariadb?
-          version >= "5.3.0"
-        else
-          version >= "5.6.4"
-        end
+        mariadb? || version >= "5.6.4"
       end
 
       def supports_virtual_columns?
-        if mariadb?
-          version >= "5.2.0"
-        else
-          version >= "5.7.5"
-        end
+        mariadb? || version >= "5.7.5"
+      end
+
+      # See https://dev.mysql.com/doc/refman/8.0/en/optimizer-hints.html for more details.
+      def supports_optimizer_hints?
+        !mariadb? && version >= "5.7.7"
       end
 
       def supports_advisory_locks?
         true
       end
 
-      def supports_longer_index_key_prefix?
-        if mariadb?
-          version >= "10.2.2"
-        else
-          version >= "5.7.9"
-        end
+      def supports_insert_on_duplicate_skip?
+        true
+      end
+
+      def supports_insert_on_duplicate_update?
+        true
       end
 
       def get_advisory_lock(lock_name, timeout = 0) # :nodoc:
@@ -169,10 +165,9 @@ module ActiveRecord
 
       # CONNECTION MANAGEMENT ====================================
 
-      # Clears the prepared statements cache.
-      def clear_cache!
+      def clear_cache! # :nodoc:
         reload_type_map
-        @statements.clear
+        super
       end
 
       #--
@@ -181,9 +176,9 @@ module ActiveRecord
 
       def explain(arel, binds = [])
         sql     = "EXPLAIN #{to_sql(arel, binds)}"
-        start   = Time.now
+        start   = Concurrent.monotonic_time
         result  = exec_query(sql, "EXPLAIN", binds)
-        elapsed = Time.now - start
+        elapsed = Concurrent.monotonic_time - start
 
         MySQL::ExplainPrettyPrinter.new.pp(result, elapsed)
       end
@@ -223,18 +218,6 @@ module ActiveRecord
         execute "ROLLBACK"
       end
 
-      # In the simple case, MySQL allows us to place JOINs directly into the UPDATE
-      # query. However, this does not allow for LIMIT, OFFSET and ORDER. To support
-      # these, we must use a subquery.
-      def join_to_update(update, select, key) # :nodoc:
-        if select.limit || select.offset || select.orders.any?
-          super
-        else
-          update.table select.source
-          update.wheres = select.constraints
-        end
-      end
-
       def empty_insert_statement_value(primary_key = nil)
         "VALUES ()"
       end
@@ -262,7 +245,7 @@ module ActiveRecord
           execute "CREATE DATABASE #{quote_table_name(name)} DEFAULT COLLATE #{quote_table_name(options[:collation])}"
         elsif options[:charset]
           execute "CREATE DATABASE #{quote_table_name(name)} DEFAULT CHARACTER SET #{quote_table_name(options[:charset])}"
-        elsif supports_longer_index_key_prefix?
+        elsif row_format_dynamic_by_default?
           execute "CREATE DATABASE #{quote_table_name(name)} DEFAULT CHARACTER SET `utf8mb4`"
         else
           raise "Configure a supported :charset and ensure innodb_large_prefix is enabled to support indexes on varchar(255) string columns."
@@ -289,10 +272,6 @@ module ActiveRecord
       # Returns the database collation strategy.
       def collation
         show_variable "collation_database"
-      end
-
-      def truncate(table_name, name = nil)
-        execute "TRUNCATE TABLE #{quote_table_name(table_name)}", name
       end
 
       def table_comment(table_name) # :nodoc:
@@ -458,30 +437,6 @@ module ActiveRecord
         table_options
       end
 
-      # Maps logical Rails types to MySQL-specific data types.
-      def type_to_sql(type, limit: nil, precision: nil, scale: nil, unsigned: nil, **) # :nodoc:
-        sql = \
-          case type.to_s
-          when "integer"
-            integer_to_sql(limit)
-          when "text"
-            text_to_sql(limit)
-          when "blob"
-            binary_to_sql(limit)
-          when "binary"
-            if (0..0xfff) === limit
-              "varbinary(#{limit})"
-            else
-              binary_to_sql(limit)
-            end
-          else
-            super
-          end
-
-        sql = "#{sql} unsigned" if unsigned && type != :primary_key
-        sql
-      end
-
       # SHOW VARIABLES LIKE 'name'
       def show_variable(name)
         query_value("SELECT @@#{name}", "SCHEMA")
@@ -504,9 +459,26 @@ module ActiveRecord
         SQL
       end
 
-      def case_sensitive_comparison(table, attribute, column, value) # :nodoc:
+      def default_uniqueness_comparison(attribute, value, klass) # :nodoc:
+        column = column_for_attribute(attribute)
+
+        if column.collation && !column.case_sensitive? && !value.nil?
+          ActiveSupport::Deprecation.warn(<<~MSG.squish)
+            Uniqueness validator will no longer enforce case sensitive comparison in Rails 6.1.
+            To continue case sensitive comparison on the :#{attribute.name} attribute in #{klass} model,
+            pass `case_sensitive: true` option explicitly to the uniqueness validator.
+          MSG
+          attribute.eq(Arel::Nodes::Bin.new(value))
+        else
+          super
+        end
+      end
+
+      def case_sensitive_comparison(attribute, value) # :nodoc:
+        column = column_for_attribute(attribute)
+
         if column.collation && !column.case_sensitive?
-          table[attribute].eq(Arel::Nodes::Bin.new(value))
+          attribute.eq(Arel::Nodes::Bin.new(value))
         else
           super
         end
@@ -540,38 +512,25 @@ module ActiveRecord
         index.using == :btree || super
       end
 
-      def insert_fixtures_set(fixture_set, tables_to_delete = [])
-        with_multi_statements do
-          super { discard_remaining_results }
+      def build_insert_sql(insert) # :nodoc:
+        sql = +"INSERT #{insert.into} #{insert.values_list}"
+
+        if insert.skip_duplicates?
+          any_column = quote_column_name(insert.model.columns.first.name)
+          sql << " ON DUPLICATE KEY UPDATE #{any_column}=#{any_column}"
+        elsif insert.update_duplicates?
+          sql << " ON DUPLICATE KEY UPDATE "
+          sql << insert.updatable_columns.map { |column| "#{column}=VALUES(#{column})" }.join(",")
         end
+
+        sql
       end
 
       private
-        def combine_multi_statements(total_sql)
-          total_sql.each_with_object([]) do |sql, total_sql_chunks|
-            previous_packet = total_sql_chunks.last
-            sql << ";\n"
-            if max_allowed_packet_reached?(sql, previous_packet) || total_sql_chunks.empty?
-              total_sql_chunks << sql
-            else
-              previous_packet << sql
-            end
+        def check_version
+          if version < "5.5.8"
+            raise "Your version of MySQL (#{version_string}) is too old. Active Record supports MySQL >= 5.5.8."
           end
-        end
-
-        def max_allowed_packet_reached?(current_packet, previous_packet)
-          if current_packet.bytesize > max_allowed_packet
-            raise ActiveRecordError, "Fixtures set is too large #{current_packet.bytesize}. Consider increasing the max_allowed_packet variable."
-          elsif previous_packet.nil?
-            false
-          else
-            (current_packet.bytesize + previous_packet.bytesize) > max_allowed_packet
-          end
-        end
-
-        def max_allowed_packet
-          bytes_margin = 2
-          @max_allowed_packet ||= (show_variable("max_allowed_packet") - bytes_margin)
         end
 
         def initialize_type_map(m = type_map)
@@ -601,13 +560,13 @@ module ActiveRecord
           m.alias_type %r(bit)i,           "binary"
 
           m.register_type(%r(enum)i) do |sql_type|
-            limit = sql_type[/^enum\((.+)\)/i, 1]
+            limit = sql_type[/^enum\s*\((.+)\)/i, 1]
               .split(",").map { |enum| enum.strip.length - 2 }.max
             MysqlString.new(limit: limit)
           end
 
           m.register_type(%r(^set)i) do |sql_type|
-            limit = sql_type[/^set\((.+)\)/i, 1]
+            limit = sql_type[/^set\s*\((.+)\)/i, 1]
               .split(",").map { |set| set.strip.length - 1 }.sum - 1
             MysqlString.new(limit: limit)
           end
@@ -634,6 +593,8 @@ module ActiveRecord
         # See https://dev.mysql.com/doc/refman/5.7/en/error-messages-server.html
         ER_DUP_ENTRY            = 1062
         ER_NOT_NULL_VIOLATION   = 1048
+        ER_NO_REFERENCED_ROW    = 1216
+        ER_ROW_IS_REFERENCED    = 1217
         ER_DO_NOT_HAVE_DEFAULT  = 1364
         ER_ROW_IS_REFERENCED_2  = 1451
         ER_NO_REFERENCED_ROW_2  = 1452
@@ -645,35 +606,36 @@ module ActiveRecord
         ER_LOCK_WAIT_TIMEOUT    = 1205
         ER_QUERY_INTERRUPTED    = 1317
         ER_QUERY_TIMEOUT        = 3024
+        ER_FK_INCOMPATIBLE_COLUMNS = 3780
 
-        def translate_exception(exception, message)
+        def translate_exception(exception, message:, sql:, binds:)
           case error_number(exception)
           when ER_DUP_ENTRY
-            RecordNotUnique.new(message)
-          when ER_ROW_IS_REFERENCED_2, ER_NO_REFERENCED_ROW_2
-            InvalidForeignKey.new(message)
-          when ER_CANNOT_ADD_FOREIGN
-            mismatched_foreign_key(message)
+            RecordNotUnique.new(message, sql: sql, binds: binds)
+          when ER_NO_REFERENCED_ROW, ER_ROW_IS_REFERENCED, ER_ROW_IS_REFERENCED_2, ER_NO_REFERENCED_ROW_2
+            InvalidForeignKey.new(message, sql: sql, binds: binds)
+          when ER_CANNOT_ADD_FOREIGN, ER_FK_INCOMPATIBLE_COLUMNS
+            mismatched_foreign_key(message, sql: sql, binds: binds)
           when ER_CANNOT_CREATE_TABLE
             if message.include?("errno: 150")
-              mismatched_foreign_key(message)
+              mismatched_foreign_key(message, sql: sql, binds: binds)
             else
               super
             end
           when ER_DATA_TOO_LONG
-            ValueTooLong.new(message)
+            ValueTooLong.new(message, sql: sql, binds: binds)
           when ER_OUT_OF_RANGE
-            RangeError.new(message)
+            RangeError.new(message, sql: sql, binds: binds)
           when ER_NOT_NULL_VIOLATION, ER_DO_NOT_HAVE_DEFAULT
-            NotNullViolation.new(message)
+            NotNullViolation.new(message, sql: sql, binds: binds)
           when ER_LOCK_DEADLOCK
-            Deadlocked.new(message)
+            Deadlocked.new(message, sql: sql, binds: binds)
           when ER_LOCK_WAIT_TIMEOUT
-            LockWaitTimeout.new(message)
+            LockWaitTimeout.new(message, sql: sql, binds: binds)
           when ER_QUERY_TIMEOUT
-            StatementTimeout.new(message)
+            StatementTimeout.new(message, sql: sql, binds: binds)
           when ER_QUERY_INTERRUPTED
-            QueryCanceled.new(message)
+            QueryCanceled.new(message, sql: sql, binds: binds)
           else
             super
           end
@@ -726,25 +688,17 @@ module ActiveRecord
         end
 
         def add_timestamps_for_alter(table_name, options = {})
+          options[:null] = false if options[:null].nil?
+
+          if !options.key?(:precision) && supports_datetime_with_precision?
+            options[:precision] = 6
+          end
+
           [add_column_for_alter(table_name, :created_at, :datetime, options), add_column_for_alter(table_name, :updated_at, :datetime, options)]
         end
 
         def remove_timestamps_for_alter(table_name, options = {})
           [remove_column_for_alter(table_name, :updated_at), remove_column_for_alter(table_name, :created_at)]
-        end
-
-        # MySQL is too stupid to create a temporary table for use subquery, so we have
-        # to give it some prompting in the form of a subsubquery. Ugh!
-        def subquery_for(key, select)
-          subselect = select.clone
-          subselect.projections = [key]
-
-          # Materialize subquery by adding distinct
-          # to work with MySQL 5.7.6 which sets optimizer_switch='derived_merge=on'
-          subselect.distinct unless select.limit || select.offset || select.orders.any?
-
-          key_name = quote_column_name(key.name)
-          Arel::SelectManager.new(subselect.as("__active_record_temp")).project(Arel.sql(key_name))
         end
 
         def supports_rename_index?
@@ -818,47 +772,32 @@ module ActiveRecord
           Arel::Visitors::MySQL.new(self)
         end
 
-        def mismatched_foreign_key(message)
-          parts = message.scan(/`(\w+)`[ $)]/).flatten
-          MismatchedForeignKey.new(
-            self,
+        def build_statement_pool
+          StatementPool.new(self.class.type_cast_config_to_integer(@config[:statement_limit]))
+        end
+
+        def mismatched_foreign_key(message, sql:, binds:)
+          match = %r/
+            (?:CREATE|ALTER)\s+TABLE\s*(?:`?\w+`?\.)?`?(?<table>\w+)`?.+?
+            FOREIGN\s+KEY\s*\(`?(?<foreign_key>\w+)`?\)\s*
+            REFERENCES\s*(`?(?<target_table>\w+)`?)\s*\(`?(?<primary_key>\w+)`?\)
+          /xmi.match(sql)
+
+          options = {
             message: message,
-            table: parts[0],
-            foreign_key: parts[1],
-            target_table: parts[2],
-            primary_key: parts[3],
-          )
-        end
+            sql: sql,
+            binds: binds,
+          }
 
-        def integer_to_sql(limit) # :nodoc:
-          case limit
-          when 1; "tinyint"
-          when 2; "smallint"
-          when 3; "mediumint"
-          when nil, 4; "int"
-          when 5..8; "bigint"
-          else raise(ActiveRecordError, "No integer type has byte size #{limit}. Use a decimal with scale 0 instead.")
+          if match
+            options[:table] = match[:table]
+            options[:foreign_key] = match[:foreign_key]
+            options[:target_table] = match[:target_table]
+            options[:primary_key] = match[:primary_key]
+            options[:primary_key_column] = column_for(match[:target_table], match[:primary_key])
           end
-        end
 
-        def text_to_sql(limit) # :nodoc:
-          case limit
-          when 0..0xff;               "tinytext"
-          when nil, 0x100..0xffff;    "text"
-          when 0x10000..0xffffff;     "mediumtext"
-          when 0x1000000..0xffffffff; "longtext"
-          else raise(ActiveRecordError, "No text type has byte length #{limit}")
-          end
-        end
-
-        def binary_to_sql(limit) # :nodoc:
-          case limit
-          when 0..0xff;               "tinyblob"
-          when nil, 0x100..0xffff;    "blob"
-          when 0x10000..0xffffff;     "mediumblob"
-          when 0x1000000..0xffffffff; "longblob"
-          else raise(ActiveRecordError, "No binary type has byte length #{limit}")
-          end
+          MismatchedForeignKey.new(options)
         end
 
         def version_string

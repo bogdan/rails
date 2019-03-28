@@ -16,6 +16,9 @@ require "active_support/testing/autorun"
 require "active_support/testing/stream"
 require "active_support/testing/method_call_assertions"
 require "active_support/test_case"
+require "minitest/retry"
+
+Minitest::Retry.use!(verbose: false, retry_count: 1)
 
 RAILS_FRAMEWORK_ROOT = File.expand_path("../../..", __dir__)
 
@@ -30,11 +33,11 @@ require "rails/secrets"
 module TestHelpers
   module Paths
     def app_template_path
-      File.join Dir.tmpdir, "app_template"
+      File.join RAILS_FRAMEWORK_ROOT, "tmp/templates/app_template"
     end
 
     def tmp_path(*args)
-      @tmp_path ||= File.realpath(Dir.mktmpdir)
+      @tmp_path ||= File.realpath(Dir.mktmpdir(nil, File.join(RAILS_FRAMEWORK_ROOT, "tmp")))
       File.join(@tmp_path, *args)
     end
 
@@ -120,6 +123,8 @@ module TestHelpers
             adapter: sqlite3
             pool: 5
             timeout: 5000
+            variables:
+              statement_timeout: 1000
           development:
             primary:
               <<: *default
@@ -194,6 +199,7 @@ module TestHelpers
       end
 
       add_to_config <<-RUBY
+        config.hosts << proc { true }
         config.eager_load = false
         config.session_store :cookie_store, key: "_myapp_session"
         config.active_support.deprecation = :log
@@ -217,10 +223,12 @@ module TestHelpers
       @app = Class.new(Rails::Application) do
         def self.name; "RailtiesTestApp"; end
       end
+      @app.config.hosts << proc { true }
       @app.config.eager_load = false
       @app.config.session_store :cookie_store, key: "_myapp_session"
       @app.config.active_support.deprecation = :log
       @app.config.log_level = :info
+      @app.secrets.secret_key_base = "b3c631c314c0bbca50c1b2843150fe33"
 
       yield @app if block_given?
       @app.initialize!
@@ -416,6 +424,10 @@ module TestHelpers
       file_name
     end
 
+    def app_dir(path)
+      FileUtils.mkdir_p("#{app_path}/#{path}")
+    end
+
     def remove_file(path)
       FileUtils.rm_rf "#{app_path}/#{path}"
     end
@@ -425,7 +437,7 @@ module TestHelpers
     end
 
     def use_frameworks(arr)
-      to_remove = [:actionmailer, :activerecord, :activestorage, :activejob] - arr
+      to_remove = [:actionmailer, :activerecord, :activestorage, :activejob, :actionmailbox] - arr
 
       if to_remove.include?(:activerecord)
         remove_from_config "config.active_record.*"
@@ -449,18 +461,21 @@ module TestHelpers
       end
     end
   end
+
+  module Reload
+    def reload
+      ActiveSupport::Dependencies.clear
+    end
+  end
 end
 
 class ActiveSupport::TestCase
   include TestHelpers::Paths
   include TestHelpers::Rack
   include TestHelpers::Generation
+  include TestHelpers::Reload
   include ActiveSupport::Testing::Stream
   include ActiveSupport::Testing::MethodCallAssertions
-
-  def frozen_error_class
-    Object.const_defined?(:FrozenError) ? FrozenError : RuntimeError
-  end
 end
 
 # Create a scope and build a fixture rails app
@@ -469,17 +484,31 @@ Module.new do
 
   # Build a rails app
   FileUtils.rm_rf(app_template_path)
-  FileUtils.mkdir(app_template_path)
+  FileUtils.mkdir_p(app_template_path)
 
-  `#{Gem.ruby} #{RAILS_FRAMEWORK_ROOT}/railties/exe/rails new #{app_template_path} --skip-gemfile --skip-listen --no-rc`
+  `#{Gem.ruby} #{RAILS_FRAMEWORK_ROOT}/railties/exe/rails new #{app_template_path} --skip-bundle --skip-listen --no-rc --skip-webpack-install`
   File.open("#{app_template_path}/config/boot.rb", "w") do |f|
     f.puts "require 'rails/all'"
   end
 
+  unless File.exist?("#{RAILS_FRAMEWORK_ROOT}/actionview/lib/assets/compiled/rails-ujs.js")
+    Dir.chdir("#{RAILS_FRAMEWORK_ROOT}/actionview") { `yarn build` }
+  end
+
+  assets_path = "#{RAILS_FRAMEWORK_ROOT}/railties/test/isolation/assets"
+  unless Dir.exist?("#{assets_path}/node_modules")
+    Dir.chdir(assets_path) { `yarn install` }
+  end
+  FileUtils.cp("#{assets_path}/package.json", "#{app_template_path}/package.json")
+  FileUtils.cp("#{assets_path}/config/webpacker.yml", "#{app_template_path}/config/webpacker.yml")
+  FileUtils.cp_r("#{assets_path}/config/webpack", "#{app_template_path}/config/webpack")
+  FileUtils.ln_s("#{assets_path}/node_modules", "#{app_template_path}/node_modules")
+  FileUtils.chdir(app_template_path) { `bin/rails webpacker:binstubs` }
+
   # Fake 'Bundler.require' -- we run using the repo's Gemfile, not an
   # app-specific one: we don't want to require every gem that lists.
   contents = File.read("#{app_template_path}/config/application.rb")
-  contents.sub!(/^Bundler\.require.*/, "%w(turbolinks).each { |r| require r }")
+  contents.sub!(/^Bundler\.require.*/, "%w(turbolinks webpacker).each { |r| require r }")
   File.write("#{app_template_path}/config/application.rb", contents)
 
   require "rails"
@@ -492,6 +521,8 @@ Module.new do
   require "action_view"
   require "active_storage"
   require "action_cable"
+  require "action_mailbox"
+  require "action_text"
   require "sprockets"
 
   require "action_view/helpers"
