@@ -113,6 +113,7 @@ module ActionView
 
     eager_autoload do
       autoload :Error
+      autoload :RawFile
       autoload :Handlers
       autoload :HTML
       autoload :Inline
@@ -139,7 +140,7 @@ module ActionView
       @virtual_path      = virtual_path
 
       @variable = if @virtual_path
-        base = @virtual_path[-1] == "/" ? "" : File.basename(@virtual_path)
+        base = @virtual_path[-1] == "/" ? "" : ::File.basename(@virtual_path)
         base =~ /\A_?(.*?)(?:\.\w+)*\z/
         $1.to_sym
       end
@@ -331,6 +332,7 @@ module ActionView
 
         # Make sure that the resulting String to be eval'd is in the
         # encoding of the code
+        original_source = source
         source = +<<-end_src
           def #{method_name}(local_assigns, output_buffer)
             @virtual_path = #{@virtual_path.inspect};#{locals_code};#{code}
@@ -351,7 +353,14 @@ module ActionView
           raise WrongEncodingError.new(source, Encoding.default_internal)
         end
 
-        mod.module_eval(source, identifier, 0)
+        begin
+          mod.module_eval(source, identifier, 0)
+        rescue SyntaxError
+          # Account for when code in the template is not syntactically valid; e.g. if we're using
+          # ERB and the user writes <%= foo( %>, attempting to call a helper `foo` and interpolate
+          # the result into the template, but missing an end parenthesis.
+          raise SyntaxErrorInTemplate.new(self, original_source)
+        end
       end
 
       def handle_render_error(view, e)

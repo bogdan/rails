@@ -68,13 +68,15 @@ module Rails
 
       def field_type
         @field_type ||= case type
-                        when :integer              then :number_field
-                        when :float, :decimal      then :text_field
-                        when :time                 then :time_select
-                        when :datetime, :timestamp then :datetime_select
-                        when :date                 then :date_select
-                        when :text                 then :text_area
-                        when :boolean              then :check_box
+                        when :integer                  then :number_field
+                        when :float, :decimal          then :text_field
+                        when :time                     then :time_select
+                        when :datetime, :timestamp     then :datetime_select
+                        when :date                     then :date_select
+                        when :text                     then :text_area
+                        when :rich_text                then :rich_text_area
+                        when :boolean                  then :check_box
+                        when :attachment, :attachments then :file_field
                         else
                           :text_field
         end
@@ -90,7 +92,9 @@ module Rails
                      when :string                      then name == "type" ? "" : "MyString"
                      when :text                        then "MyText"
                      when :boolean                     then false
-                     when :references, :belongs_to     then nil
+                     when :references, :belongs_to,
+                          :attachment, :attachments,
+                          :rich_text                   then nil
                      else
                        ""
         end
@@ -150,6 +154,22 @@ module Rails
 
       def token?
         type == :token
+      end
+
+      def rich_text?
+        type == :rich_text
+      end
+
+      def attachment?
+        type == :attachment
+      end
+
+      def attachments?
+        type == :attachments
+      end
+
+      def virtual?
+        rich_text? || attachment? || attachments?
       end
 
       def inject_options

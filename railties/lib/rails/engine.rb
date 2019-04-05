@@ -230,7 +230,7 @@ module Rails
   #
   # If +MyEngine+ is isolated, The routes above will point to
   # <tt>MyEngine::ArticlesController</tt>. You also don't need to use longer
-  # url helpers like +my_engine_articles_path+. Instead, you should simply use
+  # URL helpers like +my_engine_articles_path+. Instead, you should simply use
   # +articles_path+, like you would do with your main application.
   #
   # To make this behavior consistent with other parts of the framework,
@@ -238,7 +238,7 @@ module Rails
   # normal Rails app, when you use a namespaced model such as
   # <tt>Namespace::Article</tt>, <tt>ActiveModel::Naming</tt> will generate
   # names with the prefix "namespace". In an isolated engine, the prefix will
-  # be omitted in url helpers and form fields, for convenience.
+  # be omitted in URL helpers and form fields, for convenience.
   #
   #   polymorphic_url(MyEngine::Article.new)
   #   # => "articles_path" # not "my_engine_articles_path"
@@ -286,11 +286,11 @@ module Rails
   # Note that the <tt>:as</tt> option given to mount takes the <tt>engine_name</tt> as default, so most of the time
   # you can simply omit it.
   #
-  # Finally, if you want to generate a url to an engine's route using
+  # Finally, if you want to generate a URL to an engine's route using
   # <tt>polymorphic_url</tt>, you also need to pass the engine helper. Let's
   # say that you want to create a form pointing to one of the engine's routes.
   # All you need to do is pass the helper as the first element in array with
-  # attributes for url:
+  # attributes for URL:
   #
   #   form_for([my_engine, @user])
   #
@@ -469,13 +469,16 @@ module Rails
       self
     end
 
-    # Eager load the application by loading all ruby
-    # files inside eager_load paths.
     def eager_load!
-      if Rails.autoloaders.zeitwerk_enabled?
-        eager_load_with_zeitwerk!
-      else
-        eager_load_with_dependencies!
+      # Already done by Zeitwerk::Loader.eager_load_all in the finisher.
+      return if Rails.autoloaders.zeitwerk_enabled?
+
+      config.eager_load_paths.each do |load_path|
+        # Starts after load_path plus a slash, ends before ".rb".
+        relname_range = (load_path.to_s.length + 1)...-3
+        Dir.glob("#{load_path}/**/*.rb").sort.each do |file|
+          require_dependency file[relname_range]
+        end
       end
     end
 
@@ -567,10 +570,13 @@ module Rails
       ActiveSupport::Dependencies.autoload_paths.unshift(*_all_autoload_paths)
       ActiveSupport::Dependencies.autoload_once_paths.unshift(*_all_autoload_once_paths)
 
-      # Freeze so future modifications will fail rather than do nothing mysteriously
       config.autoload_paths.freeze
-      config.eager_load_paths.freeze
       config.autoload_once_paths.freeze
+    end
+
+    initializer :set_eager_load_paths, before: :bootstrap_hook do
+      ActiveSupport::Dependencies._eager_load_paths.merge(config.eager_load_paths)
+      config.eager_load_paths.freeze
     end
 
     initializer :add_routing_paths do |app|
@@ -650,22 +656,6 @@ module Rails
       end
 
     private
-
-      def eager_load_with_zeitwerk!
-        (config.eager_load_paths - Zeitwerk::Loader.all_dirs).each do |path|
-          Dir.glob("#{path}/**/*.rb").sort.each { |file| require file }
-        end
-      end
-
-      def eager_load_with_dependencies!
-        config.eager_load_paths.each do |load_path|
-          # Starts after load_path plus a slash, ends before ".rb".
-          relname_range = (load_path.to_s.length + 1)...-3
-          Dir.glob("#{load_path}/**/*.rb").sort.each do |file|
-            require_dependency file[relname_range]
-          end
-        end
-      end
 
       def load_config_initializer(initializer) # :doc:
         ActiveSupport::Notifications.instrument("load_config_initializer.railties", initializer: initializer) do

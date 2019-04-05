@@ -124,10 +124,24 @@ class ZeitwerkIntegrationTest < ActiveSupport::TestCase
 
     app_file "app/models/user.rb", "class User; end; $zeitwerk_integration_test_user = true"
     app_file "app/models/post.rb", "class Post; end; $zeitwerk_integration_test_post = true"
+
     boot("production")
 
     assert $zeitwerk_integration_test_user
     assert $zeitwerk_integration_test_post
+  end
+
+  test "eager loading loads code in engines" do
+    $test_blog_engine_eager_loaded = false
+
+    engine("blog") do |bukkit|
+      bukkit.write("lib/blog.rb", "class BlogEngine < Rails::Engine; end")
+      bukkit.write("app/models/post.rb", "Post = $test_blog_engine_eager_loaded = true")
+    end
+
+    boot("production")
+
+    assert $test_blog_engine_eager_loaded
   end
 
   test "eager loading loads anything managed by Zeitwerk" do
@@ -146,6 +160,34 @@ class ZeitwerkIntegrationTest < ActiveSupport::TestCase
     boot("production")
 
     assert $zeitwerk_integration_test_user
+    assert $zeitwerk_integration_test_extras
+  end
+
+  test "autoload directories not present in eager load paths are not eager loaded" do
+    $zeitwerk_integration_test_user = false
+    app_file "app/models/user.rb", "class User; end; $zeitwerk_integration_test_user = true"
+
+    $zeitwerk_integration_test_lib = false
+    app_dir "lib"
+    app_file "lib/webhook_hacks.rb", "WebhookHacks = 1; $zeitwerk_integration_test_lib = true"
+
+    $zeitwerk_integration_test_extras = false
+    app_dir "extras"
+    app_file "extras/websocket_hacks.rb", "WebsocketHacks = 1; $zeitwerk_integration_test_extras = true"
+
+    add_to_config "config.autoload_paths      << '#{app_path}/lib'"
+    add_to_config "config.autoload_once_paths << '#{app_path}/extras'"
+
+    boot("production")
+
+    assert $zeitwerk_integration_test_user
+    assert_not $zeitwerk_integration_test_lib
+    assert_not $zeitwerk_integration_test_extras
+
+    assert WebhookHacks
+    assert WebsocketHacks
+
+    assert $zeitwerk_integration_test_lib
     assert $zeitwerk_integration_test_extras
   end
 

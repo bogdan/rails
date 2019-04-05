@@ -129,11 +129,12 @@ module ActiveRecord
         relation = apply_join_dependency
 
         if operation.to_s.downcase == "count"
-          relation.distinct!
-          # PostgreSQL: ORDER BY expressions must appear in SELECT list when using DISTINCT
-          if (column_name == :all || column_name.nil?) && select_values.empty?
-            relation.order_values = []
+          unless distinct_value || distinct_select?(column_name || select_for_count)
+            relation.distinct!
+            relation.select_values = [ klass.primary_key || table[Arel.star] ]
           end
+          # PostgreSQL: ORDER BY expressions must appear in SELECT list when using DISTINCT
+          relation.order_values = []
         end
 
         relation.calculate(operation, column_name)
@@ -416,16 +417,17 @@ module ActiveRecord
 
       def build_count_subquery(relation, column_name, distinct)
         if column_name == :all
+          column_alias = Arel.star
           relation.select_values = [ Arel.sql(FinderMethods::ONE_AS_ONE) ] unless distinct
         else
           column_alias = Arel.sql("count_column")
           relation.select_values = [ aggregate_column(column_name).as(column_alias) ]
         end
 
-        subquery = relation.arel.as(Arel.sql("subquery_for_count"))
-        select_value = operation_over_aggregate_column(column_alias || Arel.star, "count", false)
+        subquery_alias = Arel.sql("subquery_for_count")
+        select_value = operation_over_aggregate_column(column_alias, "count", false)
 
-        Arel::SelectManager.new(subquery).project(select_value)
+        relation.build_subquery(subquery_alias, select_value)
       end
   end
 end
