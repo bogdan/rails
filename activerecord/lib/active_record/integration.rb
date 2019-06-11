@@ -22,6 +22,14 @@ module ActiveRecord
       #
       # This is +true+, by default on Rails 5.2 and above.
       class_attribute :cache_versioning, instance_writer: false, default: false
+
+      ##
+      # :singleton-method:
+      # Indicates whether to use a stable #cache_key method that is accompanied
+      # by a changing version in the #cache_version method on collections.
+      #
+      # This is +false+, by default until Rails 6.1.
+      class_attribute :collection_cache_versioning, instance_writer: false, default: false
     end
 
     # Returns a +String+, which Action Pack uses for constructing a URL to this
@@ -85,7 +93,7 @@ module ActiveRecord
     # cache_version, but this method can be overwritten to return something else.
     #
     # Note, this method will return nil if ActiveRecord::Base.cache_versioning is set to
-    # +false+ (which it is by default until Rails 6.0).
+    # +false+.
     def cache_version
       return unless cache_versioning
 
@@ -154,7 +162,7 @@ module ActiveRecord
       end
 
       def collection_cache_key(collection = all, timestamp_column = :updated_at) # :nodoc:
-        collection.compute_cache_key(timestamp_column)
+        collection.send(:compute_cache_key, timestamp_column)
       end
     end
 

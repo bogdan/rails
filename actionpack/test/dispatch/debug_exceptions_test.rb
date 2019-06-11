@@ -5,6 +5,18 @@ require "abstract_unit"
 class DebugExceptionsTest < ActionDispatch::IntegrationTest
   InterceptedErrorInstance = StandardError.new
 
+  class CustomActionableError < StandardError
+    include ActiveSupport::ActionableError
+
+    action "Action 1" do
+      nil
+    end
+
+    action "Action 2" do
+      nil
+    end
+  end
+
   class Boomer
     attr_accessor :closed
 
@@ -92,6 +104,8 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
         method_that_raises
       when "/nested_exceptions"
         raise_nested_exceptions
+      when %r{/actionable_error}
+        raise CustomActionableError
       else
         raise "puke!"
       end
@@ -194,7 +208,7 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
     assert_response 500
     assert_no_match(/<header>/, body)
     assert_no_match(/<body>/, body)
-    assert_equal "text/plain", response.content_type
+    assert_equal "text/plain", response.media_type
     assert_match(/RuntimeError\npuke/, body)
 
     Rails.stub :root, Pathname.new(".") do
@@ -208,31 +222,31 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
     get "/not_found", headers: xhr_request_env
     assert_response 404
     assert_no_match(/<body>/, body)
-    assert_equal "text/plain", response.content_type
+    assert_equal "text/plain", response.media_type
     assert_match(/#{AbstractController::ActionNotFound.name}/, body)
 
     get "/method_not_allowed", headers: xhr_request_env
     assert_response 405
     assert_no_match(/<body>/, body)
-    assert_equal "text/plain", response.content_type
+    assert_equal "text/plain", response.media_type
     assert_match(/ActionController::MethodNotAllowed/, body)
 
     get "/unknown_http_method", headers: xhr_request_env
     assert_response 405
     assert_no_match(/<body>/, body)
-    assert_equal "text/plain", response.content_type
+    assert_equal "text/plain", response.media_type
     assert_match(/ActionController::UnknownHttpMethod/, body)
 
     get "/bad_request", headers: xhr_request_env
     assert_response 400
     assert_no_match(/<body>/, body)
-    assert_equal "text/plain", response.content_type
+    assert_equal "text/plain", response.media_type
     assert_match(/ActionController::BadRequest/, body)
 
     get "/parameter_missing", headers: xhr_request_env
     assert_response 400
     assert_no_match(/<body>/, body)
-    assert_equal "text/plain", response.content_type
+    assert_equal "text/plain", response.media_type
     assert_match(/ActionController::ParameterMissing/, body)
   end
 
@@ -243,37 +257,37 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
     assert_response 500
     assert_no_match(/<header>/, body)
     assert_no_match(/<body>/, body)
-    assert_equal "application/json", response.content_type
+    assert_equal "application/json", response.media_type
     assert_match(/RuntimeError: puke/, body)
 
     get "/not_found", headers: { "action_dispatch.show_exceptions" => true }, as: :json
     assert_response 404
     assert_no_match(/<body>/, body)
-    assert_equal "application/json", response.content_type
+    assert_equal "application/json", response.media_type
     assert_match(/#{AbstractController::ActionNotFound.name}/, body)
 
     get "/method_not_allowed", headers: { "action_dispatch.show_exceptions" => true }, as: :json
     assert_response 405
     assert_no_match(/<body>/, body)
-    assert_equal "application/json", response.content_type
+    assert_equal "application/json", response.media_type
     assert_match(/ActionController::MethodNotAllowed/, body)
 
     get "/unknown_http_method", headers: { "action_dispatch.show_exceptions" => true }, as: :json
     assert_response 405
     assert_no_match(/<body>/, body)
-    assert_equal "application/json", response.content_type
+    assert_equal "application/json", response.media_type
     assert_match(/ActionController::UnknownHttpMethod/, body)
 
     get "/bad_request", headers: { "action_dispatch.show_exceptions" => true }, as: :json
     assert_response 400
     assert_no_match(/<body>/, body)
-    assert_equal "application/json", response.content_type
+    assert_equal "application/json", response.media_type
     assert_match(/ActionController::BadRequest/, body)
 
     get "/parameter_missing", headers: { "action_dispatch.show_exceptions" => true }, as: :json
     assert_response 400
     assert_no_match(/<body>/, body)
-    assert_equal "application/json", response.content_type
+    assert_equal "application/json", response.media_type
     assert_match(/ActionController::ParameterMissing/, body)
   end
 
@@ -284,7 +298,7 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
     assert_response 500
     assert_match(/<header>/, body)
     assert_match(/<body>/, body)
-    assert_equal "text/html", response.content_type
+    assert_equal "text/html", response.media_type
     assert_match(/puke/, body)
   end
 
@@ -293,7 +307,7 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
 
     get "/index.xml", headers: { "action_dispatch.show_exceptions" => true }
     assert_response 500
-    assert_equal "application/xml", response.content_type
+    assert_equal "application/xml", response.media_type
     assert_match(/RuntimeError: puke/, body)
   end
 
@@ -307,7 +321,7 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
 
     get "/index", headers: { "action_dispatch.show_exceptions" => true }, as: :wibble
     assert_response 500
-    assert_equal "application/json", response.content_type
+    assert_equal "application/json", response.media_type
     assert_match(/RuntimeError: puke/, body)
 
   ensure
@@ -588,5 +602,41 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
         assert_select "code a:first", %r{in `raise_nested_exceptions'}
       end
     end
+  end
+
+  test "shows a buttons for every action in an actionable error" do
+    @app = DevelopmentApp
+    Rails.stub :root, Pathname.new(".") do
+      cleaner = ActiveSupport::BacktraceCleaner.new.tap do |bc|
+        bc.add_silencer { |line| line !~ %r{test/dispatch/debug_exceptions_test.rb} }
+      end
+
+      get "/actionable_error", headers: { "action_dispatch.backtrace_cleaner" => cleaner }
+
+      # Assert correct error
+      assert_response 500
+
+      assert_select 'input[value="Action 1"]'
+      assert_select 'input[value="Action 2"]'
+    end
+  end
+
+  test "debug exceptions app shows diagnostics when malformed query parameters are provided" do
+    @app = DevelopmentApp
+
+    get "/bad_request?x[y]=1&x[y][][w]=2"
+
+    assert_response 400
+    assert_match "ActionController::BadRequest", body
+  end
+
+  test "debug exceptions app shows diagnostics when malformed query parameters are provided by XHR" do
+    @app = DevelopmentApp
+    xhr_request_env = { "action_dispatch.show_exceptions" => true, "HTTP_X_REQUESTED_WITH" => "XMLHttpRequest" }
+
+    get "/bad_request?x[y]=1&x[y][][w]=2", headers: xhr_request_env
+
+    assert_response 400
+    assert_match "ActionController::BadRequest", body
   end
 end

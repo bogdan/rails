@@ -92,6 +92,28 @@ $ rails new commandsapp
 
 Rails will set you up with what seems like a huge amount of stuff for such a tiny command! You've got the entire Rails directory structure now with all the code you need to run our simple application right out of the box.
 
+If you wish to skip some files or components from being generated, you can append the following arguments to your `rails new` command:
+
+| Argument                | Description                                                 |
+| ----------------------- | ----------------------------------------------------------- |
+| `--skip-gemfile`        | Don't create a Gemfile                                      |
+| `--skip-git`            | Skip .gitignore file                                        |
+| `--skip-keeps`          | Skip source control .keep files                             |
+| `--skip-action-mailer`  | Skip Action Mailer files                                    |
+| `--skip-action-text`    | Skip Action Text gem                                        |
+| `--skip-active-record`  | Skip Active Record files                                    |
+| `--skip-active-storage` | Skip Active Storage files                                   |
+| `--skip-puma`           | Skip Puma related files                                     |
+| `--skip-action-cable`   | Skip Action Cable files                                     |
+| `--skip-sprockets`      | Skip Sprockets files                                        |
+| `--skip-spring`         | Don't install Spring application preloader                  |
+| `--skip-listen`         | Don't generate configuration that depends on the listen gem |
+| `--skip-javascript`     | Skip JavaScript files                                       |
+| `--skip-turbolinks`     | Skip turbolinks gem                                         |
+| `--skip-test`           | Skip test files                                             |
+| `--skip-system-test`    | Skip system test files                                      |
+| `--skip-bootsnap`       | Skip bootsnap gem                                           |
+
 ### `rails server`
 
 The `rails server` command launches a web server named Puma which comes bundled with Rails. You'll use this any time you want to access your application through a web browser.
@@ -238,14 +260,17 @@ Usage:
 
 ...
 
-Active Record options:
-      [--migration]            # Indicates when to generate migration
-                               # Default: true
+ActiveRecord options:
+      [--migration], [--no-migration]        # Indicates when to generate migration
+                                             # Default: true
 
 ...
 
 Description:
-    Create rails files for model generator.
+    Stubs out a new model. Pass the model name, either CamelCased or
+    under_scored, and an optional list of attribute pairs as arguments.
+
+...
 ```
 
 NOTE: For a list of available field types for the `type` parameter, refer to the [API documentation](https://api.rubyonrails.org/classes/ActiveRecord/ConnectionAdapters/SchemaStatements.html#method-i-add_column) for the add_column method for the `SchemaStatements` module. The `index` parameter generates a corresponding index for the column.
@@ -257,7 +282,7 @@ We will set up a simple resource called "HighScore" that will keep track of our 
 ```bash
 $ rails generate scaffold HighScore game:string score:integer
     invoke  active_record
-    create    db/migrate/20130717151933_create_high_scores.rb
+    create    db/migrate/20190416145729_create_high_scores.rb
     create    app/models/high_score.rb
     invoke    test_unit
     create      test/models/high_score_test.rb
@@ -275,20 +300,19 @@ $ rails generate scaffold HighScore game:string score:integer
     create      app/views/high_scores/_form.html.erb
     invoke    test_unit
     create      test/controllers/high_scores_controller_test.rb
+    create      test/system/high_scores_test.rb
     invoke    helper
     create      app/helpers/high_scores_helper.rb
+    invoke      test_unit
     invoke    jbuilder
     create      app/views/high_scores/index.json.jbuilder
     create      app/views/high_scores/show.json.jbuilder
-    invoke  test_unit
-    create    test/system/high_scores_test.rb
+    create      app/views/high_scores/_high_score.json.jbuilder
     invoke  assets
-    invoke    coffee
-    create      app/assets/javascripts/high_scores.coffee
     invoke    scss
     create      app/assets/stylesheets/high_scores.scss
     invoke  scss
-   identical    app/assets/stylesheets/scaffolds.scss
+    create    app/assets/stylesheets/scaffolds.scss
 ```
 
 The generator checks that there exist the directories for models, controllers, helpers, layouts, functional and unit tests, stylesheets, creates the views, controller, model and database migration for HighScore (creating the `high_scores` table and fields), takes care of the route for the **resource**, and new tests for everything.
@@ -479,6 +503,22 @@ app/controllers/admin/users_controller.rb:
 
 lib/school.rb:
   * [ 17] [FIXME]
+```
+
+#### Tags
+
+You can add more default tags to search for by using `config.annotations.register_tags`. It receives a list of tags.
+
+```ruby
+config.annotations.register_tags("DEPRECATEME", "TESTME")
+```
+
+```bash
+$ rails notes
+app/controllers/admin/users_controller.rb:
+  * [ 20] [TODO] do A/B testing on this
+  * [ 42] [TESTME] this needs more functional tests
+  * [132] [DEPRECATEME] ensure this method is deprecated in next release
 ```
 
 #### Directories

@@ -142,6 +142,8 @@ module ActiveRecord
       end
 
       def for_each
+        return {} unless defined?(Rails)
+
         databases = Rails.application.config.load_database_yaml
         database_configs = ActiveRecord::DatabaseConfigurations.new(databases).configs_for(env_name: Rails.env)
 
@@ -153,8 +155,22 @@ module ActiveRecord
         end
       end
 
-      def create_current(environment = env)
-        each_current_configuration(environment) { |configuration|
+      def raise_for_multi_db(environment = env, command:)
+        db_configs = ActiveRecord::Base.configurations.configs_for(env_name: environment)
+
+        if db_configs.count > 1
+          dbs_list = []
+
+          db_configs.each do |db|
+            dbs_list << "#{command}:#{db.spec_name}"
+          end
+
+          raise "You're using a multiple database application. To use `#{command}` you must run the namespaced task with a VERSION. Available tasks are #{dbs_list.to_sentence}."
+        end
+      end
+
+      def create_current(environment = env, spec_name = nil)
+        each_current_configuration(environment, spec_name) { |configuration|
           create configuration
         }
         ActiveRecord::Base.establish_connection(environment.to_sym)
@@ -309,6 +325,26 @@ module ActiveRecord
         Migration.verbose = verbose_was
       end
 
+      def dump_schema(configuration, format = ActiveRecord::Base.schema_format, spec_name = "primary") # :nodoc:
+        require "active_record/schema_dumper"
+        filename = dump_filename(spec_name, format)
+
+        case format
+        when :ruby
+          File.open(filename, "w:utf-8") do |file|
+            ActiveRecord::SchemaDumper.dump(ActiveRecord::Base.connection, file)
+          end
+        when :sql
+          structure_dump(configuration, filename)
+          if ActiveRecord::SchemaMigration.table_exists?
+            File.open(filename, "a") do |f|
+              f.puts ActiveRecord::Base.connection.dump_schema_information
+              f.print "\n"
+            end
+          end
+        end
+      end
+
       def schema_file(format = ActiveRecord::Base.schema_format)
         File.join(db_dir, schema_file_type(format))
       end
@@ -390,12 +426,14 @@ module ActiveRecord
           task.is_a?(String) ? task.constantize : task
         end
 
-        def each_current_configuration(environment)
+        def each_current_configuration(environment, spec_name = nil)
           environments = [environment]
           environments << "test" if environment == "development"
 
           environments.each do |env|
             ActiveRecord::Base.configurations.configs_for(env_name: env).each do |db_config|
+              next if spec_name && spec_name != db_config.spec_name
+
               yield db_config.config, db_config.spec_name, env
             end
           end

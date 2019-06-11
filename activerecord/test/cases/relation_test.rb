@@ -101,6 +101,9 @@ module ActiveRecord
 
       relation.merge!(relation)
       assert_predicate relation, :empty_scope?
+
+      assert_not_predicate NullPost.all, :empty_scope?
+      assert_not_predicate FirstPost.all, :empty_scope?
     end
 
     def test_bad_constants_raise_errors
@@ -289,6 +292,7 @@ module ActiveRecord
       klass.create!(description: "foo")
 
       assert_equal ["foo"], klass.select(:description).from(klass.all).map(&:desc)
+      assert_equal ["foo"], klass.reselect(:description).from(klass.all).map(&:desc)
     end
 
     def test_relation_merging_with_merged_joins_as_strings

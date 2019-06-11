@@ -109,6 +109,7 @@ module ActiveRecord
       end
 
       def discard! # :nodoc:
+        super
         @connection.automatic_close = false
         @connection = nil
       end
@@ -126,7 +127,11 @@ module ActiveRecord
         end
 
         def full_version
-          @full_version ||= @connection.server_info[:version]
+          schema_cache.database_version.full_version_string
+        end
+
+        def get_full_version
+          @connection.server_info[:version]
         end
     end
   end

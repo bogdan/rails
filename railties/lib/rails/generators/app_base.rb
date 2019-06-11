@@ -307,7 +307,7 @@ module Rails
       def assets_gemfile_entry
         return [] if options[:skip_sprockets]
 
-        GemfileEntry.version("sass-rails", "~> 5.0", "Use SCSS for stylesheets")
+        GemfileEntry.version("sass-rails", ">= 5", "Use SCSS for stylesheets")
       end
 
       def webpacker_gemfile_entry
@@ -322,7 +322,7 @@ module Rails
 
       def jbuilder_gemfile_entry
         comment = "Build JSON APIs with ease. Read more: https://github.com/rails/jbuilder"
-        GemfileEntry.new "jbuilder", "~> 2.5", comment, {}, options[:api]
+        GemfileEntry.new "jbuilder", "~> 2.7", comment, {}, options[:api]
       end
 
       def javascript_gemfile_entry

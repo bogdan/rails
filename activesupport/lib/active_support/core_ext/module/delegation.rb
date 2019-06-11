@@ -170,7 +170,7 @@ class Module
   # The target method must be public, otherwise it will raise +NoMethodError+.
   def delegate(*methods, to: nil, prefix: nil, allow_nil: nil, private: nil)
     unless to
-      raise ArgumentError, "Delegation needs a target. Supply an options hash with a :to key as the last argument (e.g. delegate :hello, to: :greeter)."
+      raise ArgumentError, "Delegation needs a target. Supply a keyword argument 'to' (e.g. delegate :hello, to: :greeter)."
     end
 
     if prefix == true && /^[^a-z_]/.match?(to)
@@ -274,8 +274,9 @@ class Module
   # variables, methods, constants, etc.
   #
   # The delegated method must be public on the target, otherwise it will
-  # raise +NoMethodError+.
-  def delegate_missing_to(target)
+  # raise +DelegationError+. If you wish to instead return +nil+,
+  # use the <tt>:allow_nil</tt> option.
+  def delegate_missing_to(target, allow_nil: nil)
     target = target.to_s
     target = "self.#{target}" if DELEGATION_RESERVED_METHOD_NAMES.include?(target)
 
@@ -295,7 +296,11 @@ class Module
             super
           rescue NoMethodError
             if #{target}.nil?
-              raise DelegationError, "\#{method} delegated to #{target}, but #{target} is nil"
+              if #{allow_nil == true}
+                nil
+              else
+                raise DelegationError, "\#{method} delegated to #{target}, but #{target} is nil"
+              end
             else
               raise
             end

@@ -10,6 +10,8 @@ module ActiveSupport
         def clear
           Dependencies.unload_interlock do
             Rails.autoloaders.main.reload
+          rescue Zeitwerk::ReloadingDisabledError
+            raise "reloading is disabled because config.cache_classes is true"
           end
         end
 
@@ -22,16 +24,12 @@ module ActiveSupport
         end
 
         def autoloaded_constants
-          cpaths = []
-          Rails.autoloaders.each do |autoloader|
-            cpaths.concat(autoloader.loaded_cpaths.to_a)
-          end
-          cpaths
+          Rails.autoloaders.main.unloadable_cpaths
         end
 
         def autoloaded?(object)
           cpath = object.is_a?(Module) ? object.name : object.to_s
-          Rails.autoloaders.any? { |autoloader| autoloader.loaded?(cpath) }
+          Rails.autoloaders.main.unloadable_cpath?(cpath)
         end
 
         def verbose=(verbose)
@@ -51,15 +49,15 @@ module ActiveSupport
       end
 
       class << self
-        def take_over
-          setup_autoloaders
+        def take_over(enable_reloading:)
+          setup_autoloaders(enable_reloading)
           freeze_paths
           decorate_dependencies
         end
 
         private
 
-          def setup_autoloaders
+          def setup_autoloaders(enable_reloading)
             Dependencies.autoload_paths.each do |autoload_path|
               # Zeitwerk only accepts existing directories in `push_dir` to
               # prevent misconfigurations.
@@ -72,6 +70,7 @@ module ActiveSupport
               autoloader.do_not_eager_load(autoload_path) unless eager_load?(autoload_path)
             end
 
+            Rails.autoloaders.main.enable_reloading if enable_reloading
             Rails.autoloaders.each(&:setup)
           end
 

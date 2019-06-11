@@ -781,7 +781,7 @@ This can be helpful for viewing the browser at the point a test failed, or
 to view screenshots later for debugging.
 
 Two methods are provided: `take_screenshot` and `take_failed_screenshot`.
-`take_failed_screenshot` is automatically included in `after_teardown` inside
+`take_failed_screenshot` is automatically included in `before_teardown` inside
 Rails.
 
 The `take_screenshot` helper method can be included anywhere in your tests to
@@ -1144,7 +1144,7 @@ test "ajax request" do
   get article_url(article), xhr: true
 
   assert_equal 'hello world', @response.body
-  assert_equal "text/javascript", @response.content_type
+  assert_equal "text/javascript", @response.media_type
 end
 ```
 
@@ -1212,7 +1212,7 @@ Let's start by adding this assertion to our `test_should_create_article` test:
 ```ruby
 test "should create article" do
   assert_difference('Article.count') do
-    post article_url, params: { article: { title: 'Some title' } }
+    post articles_url, params: { article: { title: 'Some title' } }
   end
 
   assert_redirected_to article_path(Article.last)
@@ -1728,6 +1728,25 @@ class ProductTest < ActiveSupport::TestCase
   test 'billing job scheduling' do
     assert_enqueued_with(job: BillingJob) do
       product.charge(account)
+    end
+  end
+end
+```
+
+### Asserting Time Arguments in Jobs
+
+When serializing job arguments, `Time`, `DateTime`, and `ActiveSupport::TimeWithZone` lose microsecond precision. This means comparing deserialized time with actual time doesn't always work. To compensate for the loss of precision, `assert_enqueued_with` and `assert_performed_with` will remove microseconds from time objects in argument assertions.
+
+```ruby
+require 'test_helper'
+
+class ProductTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
+  test 'that product is reserved at a given time' do
+    now = Time.now
+    assert_performed_with(job: ReservationJob, args: [product, now]) do
+      product.reserve(now)
     end
   end
 end

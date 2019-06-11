@@ -48,8 +48,8 @@ module ActiveRecord
   end
 
   module ConnectionAdapters #:nodoc:
-    # The SQLite3 adapter works SQLite 3.6.16 or newer
-    # with the sqlite3-ruby drivers (available as gem from https://rubygems.org/gems/sqlite3).
+    # The SQLite3 adapter works with the sqlite3-ruby drivers
+    # (available as gem from https://rubygems.org/gems/sqlite3).
     #
     # Options:
     #
@@ -199,94 +199,6 @@ module ActiveRecord
           execute("PRAGMA defer_foreign_keys = #{old_defer_foreign_keys}")
           execute("PRAGMA foreign_keys = #{old_foreign_keys}")
         end
-      end
-
-      #--
-      # DATABASE STATEMENTS ======================================
-      #++
-
-      READ_QUERY = ActiveRecord::ConnectionAdapters::AbstractAdapter.build_read_query_regexp(:begin, :commit, :explain, :select, :pragma, :release, :savepoint, :rollback) # :nodoc:
-      private_constant :READ_QUERY
-
-      def write_query?(sql) # :nodoc:
-        !READ_QUERY.match?(sql)
-      end
-
-      def explain(arel, binds = [])
-        sql = "EXPLAIN QUERY PLAN #{to_sql(arel, binds)}"
-        SQLite3::ExplainPrettyPrinter.new.pp(exec_query(sql, "EXPLAIN", []))
-      end
-
-      def exec_query(sql, name = nil, binds = [], prepare: false)
-        if preventing_writes? && write_query?(sql)
-          raise ActiveRecord::ReadOnlyError, "Write query attempted while in readonly mode: #{sql}"
-        end
-
-        materialize_transactions
-
-        type_casted_binds = type_casted_binds(binds)
-
-        log(sql, name, binds, type_casted_binds) do
-          ActiveSupport::Dependencies.interlock.permit_concurrent_loads do
-            # Don't cache statements if they are not prepared
-            unless prepare
-              stmt = @connection.prepare(sql)
-              begin
-                cols = stmt.columns
-                unless without_prepared_statement?(binds)
-                  stmt.bind_params(type_casted_binds)
-                end
-                records = stmt.to_a
-              ensure
-                stmt.close
-              end
-            else
-              stmt = @statements[sql] ||= @connection.prepare(sql)
-              cols = stmt.columns
-              stmt.reset!
-              stmt.bind_params(type_casted_binds)
-              records = stmt.to_a
-            end
-
-            ActiveRecord::Result.new(cols, records)
-          end
-        end
-      end
-
-      def exec_delete(sql, name = "SQL", binds = [])
-        exec_query(sql, name, binds)
-        @connection.changes
-      end
-      alias :exec_update :exec_delete
-
-      def last_inserted_id(result)
-        @connection.last_insert_row_id
-      end
-
-      def execute(sql, name = nil) #:nodoc:
-        if preventing_writes? && write_query?(sql)
-          raise ActiveRecord::ReadOnlyError, "Write query attempted while in readonly mode: #{sql}"
-        end
-
-        materialize_transactions
-
-        log(sql, name) do
-          ActiveSupport::Dependencies.interlock.permit_concurrent_loads do
-            @connection.execute(sql)
-          end
-        end
-      end
-
-      def begin_db_transaction #:nodoc:
-        log("begin transaction", nil) { @connection.transaction }
-      end
-
-      def commit_db_transaction #:nodoc:
-        log("commit transaction", nil) { @connection.commit }
-      end
-
-      def exec_rollback_db_transaction #:nodoc:
-        log("rollback transaction", nil) { @connection.rollback }
       end
 
       # SCHEMA STATEMENTS ========================================
@@ -565,9 +477,9 @@ module ActiveRecord
           result = exec_query(sql, "SCHEMA").first
 
           if result
-            # Splitting with left parentheses and picking up last will return all
+            # Splitting with left parentheses and discarding the first part will return all
             # columns separated with comma(,).
-            columns_string = result["sql"].split("(").last
+            columns_string = result["sql"].split("(", 2).last
 
             columns_string.split(",").each do |column_string|
               # This regex will match the column name and collation type and will save

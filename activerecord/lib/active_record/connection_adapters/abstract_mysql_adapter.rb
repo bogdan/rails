@@ -56,14 +56,16 @@ module ActiveRecord
       end
 
       def get_database_version #:nodoc:
-        Version.new(version_string)
+        full_version_string = get_full_version
+        version_string = version_string(full_version_string)
+        Version.new(version_string, full_version_string)
       end
 
       def mariadb? # :nodoc:
         /mariadb/i.match?(full_version)
       end
 
-      def supports_bulk_alter? #:nodoc:
+      def supports_bulk_alter?
         true
       end
 
@@ -174,15 +176,6 @@ module ActiveRecord
       # DATABASE STATEMENTS ======================================
       #++
 
-      def explain(arel, binds = [])
-        sql     = "EXPLAIN #{to_sql(arel, binds)}"
-        start   = Concurrent.monotonic_time
-        result  = exec_query(sql, "EXPLAIN", binds)
-        elapsed = Concurrent.monotonic_time - start
-
-        MySQL::ExplainPrettyPrinter.new.pp(result, elapsed)
-      end
-
       # Executes the SQL statement in the context of this connection.
       def execute(sql, name = nil)
         materialize_transactions
@@ -202,7 +195,7 @@ module ActiveRecord
       end
 
       def begin_db_transaction
-        execute "BEGIN"
+        execute("BEGIN", "TRANSACTION")
       end
 
       def begin_isolated_db_transaction(isolation)
@@ -211,11 +204,11 @@ module ActiveRecord
       end
 
       def commit_db_transaction #:nodoc:
-        execute "COMMIT"
+        execute("COMMIT", "TRANSACTION")
       end
 
       def exec_rollback_db_transaction #:nodoc:
-        execute "ROLLBACK"
+        execute("ROLLBACK", "TRANSACTION")
       end
 
       def empty_insert_statement_value(primary_key = nil)
@@ -285,22 +278,8 @@ module ActiveRecord
         SQL
       end
 
-      def bulk_change_table(table_name, operations) #:nodoc:
-        sqls = operations.flat_map do |command, args|
-          table, arguments = args.shift, args
-          method = :"#{command}_for_alter"
-
-          if respond_to?(method, true)
-            send(method, table, *arguments)
-          else
-            raise "Unknown method called : #{method}(#{arguments.inspect})"
-          end
-        end.join(", ")
-
-        execute("ALTER TABLE #{quote_table_name(table_name)} #{sqls}")
-      end
-
-      def change_table_comment(table_name, comment) #:nodoc:
+      def change_table_comment(table_name, comment_or_changes) # :nodoc:
+        comment = extract_new_comment_value(comment_or_changes)
         comment = "" if comment.nil?
         execute("ALTER TABLE #{quote_table_name(table_name)} COMMENT #{quote(comment)}")
       end
@@ -356,7 +335,8 @@ module ActiveRecord
         change_column table_name, column_name, nil, null: null
       end
 
-      def change_column_comment(table_name, column_name, comment) #:nodoc:
+      def change_column_comment(table_name, column_name, comment_or_changes) # :nodoc:
+        comment = extract_new_comment_value(comment_or_changes)
         change_column table_name, column_name, nil, comment: comment
       end
 
@@ -516,8 +496,8 @@ module ActiveRecord
         sql = +"INSERT #{insert.into} #{insert.values_list}"
 
         if insert.skip_duplicates?
-          any_column = quote_column_name(insert.model.columns.first.name)
-          sql << " ON DUPLICATE KEY UPDATE #{any_column}=#{any_column}"
+          no_op_column = quote_column_name(insert.keys.first)
+          sql << " ON DUPLICATE KEY UPDATE #{no_op_column}=#{no_op_column}"
         elsif insert.update_duplicates?
           sql << " ON DUPLICATE KEY UPDATE "
           sql << insert.updatable_columns.map { |column| "#{column}=VALUES(#{column})" }.join(",")
@@ -801,8 +781,8 @@ module ActiveRecord
           MismatchedForeignKey.new(options)
         end
 
-        def version_string
-          full_version.match(/^(?:5\.5\.5-)?(\d+\.\d+\.\d+)/)[1]
+        def version_string(full_version_string)
+          full_version_string.match(/^(?:5\.5\.5-)?(\d+\.\d+\.\d+)/)[1]
         end
 
         class MysqlString < Type::String # :nodoc:

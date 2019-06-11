@@ -291,36 +291,58 @@ module ActiveRecord
       limit_value ? records.many? : size > 1
     end
 
-    # Returns a cache key that can be used to identify the records fetched by
-    # this query. The cache key is built with a fingerprint of the sql query,
-    # the number of records matched by the query and a timestamp of the last
-    # updated record. When a new record comes to match the query, or any of
-    # the existing records is updated or deleted, the cache key changes.
+    # Returns a stable cache key that can be used to identify this query.
+    # The cache key is built with a fingerprint of the SQL query.
     #
-    #   Product.where("name like ?", "%Cosmic Encounter%").cache_key
-    #   # => "products/query-1850ab3d302391b85b8693e941286659-1-20150714212553907087000"
+    #    Product.where("name like ?", "%Cosmic Encounter%").cache_key
+    #    # => "products/query-1850ab3d302391b85b8693e941286659"
     #
-    # If the collection is loaded, the method will iterate through the records
-    # to generate the timestamp, otherwise it will trigger one SQL query like:
+    # If ActiveRecord::Base.collection_cache_versioning is turned off, as it was
+    # in Rails 6.0 and earlier, the cache key will also include a version.
     #
-    #    SELECT COUNT(*), MAX("products"."updated_at") FROM "products" WHERE (name like '%Cosmic Encounter%')
+    #    ActiveRecord::Base.collection_cache_versioning = false
+    #    Product.where("name like ?", "%Cosmic Encounter%").cache_key
+    #    # => "products/query-1850ab3d302391b85b8693e941286659-1-20150714212553907087000"
     #
     # You can also pass a custom timestamp column to fetch the timestamp of the
     # last updated record.
     #
     #   Product.where("name like ?", "%Game%").cache_key(:last_reviewed_at)
-    #
-    # You can customize the strategy to generate the key on a per model basis
-    # overriding ActiveRecord::Base#collection_cache_key.
     def cache_key(timestamp_column = :updated_at)
       @cache_keys ||= {}
-      @cache_keys[timestamp_column] ||= @klass.collection_cache_key(self, timestamp_column)
+      @cache_keys[timestamp_column] ||= klass.collection_cache_key(self, timestamp_column)
     end
 
     def compute_cache_key(timestamp_column = :updated_at) # :nodoc:
       query_signature = ActiveSupport::Digest.hexdigest(to_sql)
       key = "#{klass.model_name.cache_key}/query-#{query_signature}"
 
+      if cache_version(timestamp_column)
+        key
+      else
+        "#{key}-#{compute_cache_version(timestamp_column)}"
+      end
+    end
+    private :compute_cache_key
+
+    # Returns a cache version that can be used together with the cache key to form
+    # a recyclable caching scheme. The cache version is built with the number of records
+    # matching the query, and the timestamp of the last updated record. When a new record
+    # comes to match the query, or any of the existing records is updated or deleted,
+    # the cache version changes.
+    #
+    # If the collection is loaded, the method will iterate through the records
+    # to generate the timestamp, otherwise it will trigger one SQL query like:
+    #
+    #    SELECT COUNT(*), MAX("products"."updated_at") FROM "products" WHERE (name like '%Cosmic Encounter%')
+    def cache_version(timestamp_column = :updated_at)
+      if collection_cache_versioning
+        @cache_versions ||= {}
+        @cache_versions[timestamp_column] ||= compute_cache_version(timestamp_column)
+      end
+    end
+
+    def compute_cache_version(timestamp_column) # :nodoc:
       if loaded? || distinct_value
         size = records.size
         if size > 0
@@ -356,11 +378,12 @@ module ActiveRecord
       end
 
       if timestamp
-        "#{key}-#{size}-#{timestamp.utc.to_s(cache_timestamp_format)}"
+        "#{size}-#{timestamp.utc.to_s(cache_timestamp_format)}"
       else
-        "#{key}-#{size}"
+        "#{size}"
       end
     end
+    private :compute_cache_version
 
     # Scope all queries to the current scope.
     #
@@ -445,7 +468,19 @@ module ActiveRecord
       end
     end
 
-    def update_counters(counters) # :nodoc:
+    # Updates the counters of the records in the current relation.
+    #
+    # === Parameters
+    #
+    # * +counter+ - A Hash containing the names of the fields to update as keys and the amount to update as values.
+    # * <tt>:touch</tt> option - Touch the timestamp columns when updating.
+    # * If attributes names are passed, they are updated along with update_at/on attributes.
+    #
+    # === Examples
+    #
+    #  # For Posts by a given author increment the comment_count by 1.
+    #  Post.where(author_id: author.id).update_counters(comment_count: 1)
+    def update_counters(counters)
       touch = counters.delete(:touch)
 
       updates = {}
@@ -530,8 +565,8 @@ module ActiveRecord
     #   # => ActiveRecord::ActiveRecordError: delete_all doesn't support distinct
     def delete_all
       invalid_methods = INVALID_METHODS_FOR_DELETE_ALL.select do |method|
-        value = get_value(method)
-        SINGLE_VALUE_METHODS.include?(method) ? value : value.any?
+        value = @values[method]
+        method == :distinct ? value : value&.any?
       end
       if invalid_methods.any?
         raise ActiveRecordError.new("delete_all doesn't support #{invalid_methods.join(', ')}")
@@ -721,6 +756,10 @@ module ActiveRecord
         @loaded = true
       end
 
+      def null_relation? # :nodoc:
+        is_a?(NullRelation)
+      end
+
     private
       def already_in_scope?
         @delegate_to_klass && begin
@@ -770,7 +809,7 @@ module ActiveRecord
           @records =
             if eager_loading?
               apply_join_dependency do |relation, join_dependency|
-                if ActiveRecord::NullRelation === relation
+                if relation.null_relation?
                   []
                 else
                   relation = join_dependency.apply_column_aliases(relation)

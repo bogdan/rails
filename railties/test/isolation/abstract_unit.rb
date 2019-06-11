@@ -18,7 +18,9 @@ require "active_support/testing/method_call_assertions"
 require "active_support/test_case"
 require "minitest/retry"
 
-Minitest::Retry.use!(verbose: false, retry_count: 1)
+if ENV["BUILDKITE"]
+  Minitest::Retry.use!(verbose: false, retry_count: 1)
+end
 
 RAILS_FRAMEWORK_ROOT = File.expand_path("../../..", __dir__)
 
@@ -446,18 +448,36 @@ module TestHelpers
       $:.reject! { |path| path =~ %r'/(#{to_remove.join('|')})/' }
     end
 
-    def use_postgresql
-      File.open("#{app_path}/config/database.yml", "w") do |f|
-        f.puts <<-YAML
-        default: &default
-          adapter: postgresql
-          pool: 5
-          database: railties_test
-        development:
-          <<: *default
-        test:
-          <<: *default
-        YAML
+    def use_postgresql(multi_db: false)
+      if multi_db
+        File.open("#{app_path}/config/database.yml", "w") do |f|
+          f.puts <<-YAML
+          default: &default
+            adapter: postgresql
+            pool: 5
+          development:
+            primary:
+              <<: *default
+              database: railties_test
+            animals:
+              <<: *default
+              database: railties_animals_test
+              migrations_paths: db/animals_migrate
+          YAML
+        end
+      else
+        File.open("#{app_path}/config/database.yml", "w") do |f|
+          f.puts <<-YAML
+          default: &default
+            adapter: postgresql
+            pool: 5
+            database: railties_test
+          development:
+            <<: *default
+          test:
+            <<: *default
+          YAML
+        end
       end
     end
   end

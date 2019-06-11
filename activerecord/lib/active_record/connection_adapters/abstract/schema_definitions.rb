@@ -264,8 +264,7 @@ module ActiveRecord
         if_not_exists: false,
         options: nil,
         as: nil,
-        comment: nil,
-        **
+        comment: nil
       )
         @conn = conn
         @columns_hash = {}
@@ -416,6 +415,7 @@ module ActiveRecord
       #
       #  t.references(:user)
       #  t.belongs_to(:supplier, foreign_key: true)
+      #  t.belongs_to(:supplier, foreign_key: true, type: :integer)
       #
       # See {connection.add_reference}[rdoc-ref:SchemaStatements#add_reference] for details of the options you can use.
       def references(*args, **options)

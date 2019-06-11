@@ -3,6 +3,7 @@
 require "thread"
 require "concurrent/map"
 require "monitor"
+require "weakref"
 
 module ActiveRecord
   # Raised when a connection could not be obtained within the connection
@@ -19,6 +20,26 @@ module ActiveRecord
   end
 
   module ConnectionAdapters
+    module AbstractPool # :nodoc:
+      def get_schema_cache(connection)
+        @schema_cache ||= SchemaCache.new(connection)
+        @schema_cache.connection = connection
+        @schema_cache
+      end
+
+      def set_schema_cache(cache)
+        @schema_cache = cache
+      end
+    end
+
+    class NullPool # :nodoc:
+      include ConnectionAdapters::AbstractPool
+
+      def initialize
+        @schema_cache = nil
+      end
+    end
+
     # Connection pool base class for managing Active Record database
     # connections.
     #
@@ -294,20 +315,48 @@ module ActiveRecord
           @frequency = frequency
         end
 
+        @mutex = Mutex.new
+        @pools = {}
+
+        class << self
+          def register_pool(pool, frequency) # :nodoc:
+            @mutex.synchronize do
+              unless @pools.key?(frequency)
+                @pools[frequency] = []
+                spawn_thread(frequency)
+              end
+              @pools[frequency] << WeakRef.new(pool)
+            end
+          end
+
+          private
+
+            def spawn_thread(frequency)
+              Thread.new(frequency) do |t|
+                loop do
+                  sleep t
+                  @mutex.synchronize do
+                    @pools[frequency].select!(&:weakref_alive?)
+                    @pools[frequency].each do |p|
+                      p.reap
+                      p.flush
+                    rescue WeakRef::RefError
+                    end
+                  end
+                end
+              end
+            end
+        end
+
         def run
           return unless frequency && frequency > 0
-          Thread.new(frequency, pool) { |t, p|
-            loop do
-              sleep t
-              p.reap
-              p.flush
-            end
-          }
+          self.class.register_pool(pool, frequency)
         end
       end
 
       include MonitorMixin
       include QueryCache::ConnectionPoolConfiguration
+      include ConnectionAdapters::AbstractPool
 
       attr_accessor :automatic_reconnect, :checkout_timeout, :schema_cache
       attr_reader :spec, :connections, :size, :reaper
@@ -809,7 +858,6 @@ module ActiveRecord
 
         def new_connection
           Base.send(spec.adapter_method, spec.config).tap do |conn|
-            conn.schema_cache = schema_cache.dup if schema_cache
             conn.check_version
           end
         end

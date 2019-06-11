@@ -302,6 +302,7 @@ module ActiveRecord
       end
 
       def discard! # :nodoc:
+        super
         @connection.socket_io.reopen(IO::NULL) rescue nil
         @connection = nil
       end
@@ -400,8 +401,6 @@ module ActiveRecord
       def max_identifier_length
         @max_identifier_length ||= query_value("SHOW max_identifier_length", "SCHEMA").to_i
       end
-      alias table_alias_length max_identifier_length
-      alias index_name_length max_identifier_length
 
       # Set the authorized user for this session
       def session_auth=(user)
@@ -424,9 +423,10 @@ module ActiveRecord
       }
 
       # Returns the version of the connected PostgreSQL server.
-      def get_database_version
+      def get_database_version # :nodoc:
         @connection.server_version
       end
+      alias :postgresql_version :database_version
 
       def default_index_type?(index) # :nodoc:
         index.using == :btree || super

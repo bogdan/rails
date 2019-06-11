@@ -10,7 +10,7 @@ gemspec
 gem "rake", ">= 11.1"
 
 gem "capybara", ">= 2.15"
-gem "selenium-webdriver", ">= 3.5.0", "< 3.13.0"
+gem "selenium-webdriver", ">= 3.5.0"
 
 gem "rack-cache", "~> 1.2"
 gem "sass-rails"
@@ -29,6 +29,8 @@ gem "uglifier", ">= 1.3.0", require: false
 gem "json", ">= 2.0.0"
 
 gem "rubocop", ">= 0.47", require: false
+gem "rubocop-performance", require: false
+gem "rubocop-rails", require: false
 
 group :doc do
   gem "sdoc", "~> 1.0"
@@ -44,7 +46,7 @@ gem "libxml-ruby", platforms: :ruby
 gem "connection_pool", require: false
 
 # for railties app_generator_test
-gem "bootsnap", ">= 1.4.2", require: false
+gem "bootsnap", ">= 1.4.4", require: false
 
 # Active Job
 group :job do

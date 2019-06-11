@@ -178,7 +178,7 @@ module ActiveRecord
         InsertAll.new(self, attributes, on_duplicate: :raise, returning: returning).execute
       end
 
-      # Updates or inserts (upserts) multiple records into the database in a
+      # Updates or inserts (upserts) a single record into the database in a
       # single SQL INSERT statement. It does not instantiate any models nor does
       # it trigger Active Record callbacks or validations. Though passed values
       # go through Active Record's type casting and serialization.
@@ -353,6 +353,7 @@ module ActiveRecord
       end
 
       def _insert_record(values) # :nodoc:
+        primary_key = self.primary_key
         primary_key_value = nil
 
         if primary_key && Hash === values
@@ -423,20 +424,20 @@ module ActiveRecord
     # Returns true if this object hasn't been saved yet -- that is, a record
     # for the object doesn't exist in the database yet; otherwise, returns false.
     def new_record?
-      sync_with_transaction_state
+      sync_with_transaction_state if @transaction_state&.finalized?
       @new_record
     end
 
     # Returns true if this object has been destroyed, otherwise returns false.
     def destroyed?
-      sync_with_transaction_state
+      sync_with_transaction_state if @transaction_state&.finalized?
       @destroyed
     end
 
     # Returns true if the record is persisted, i.e. it's not a new record and it was
     # not destroyed, otherwise returns false.
     def persisted?
-      sync_with_transaction_state
+      sync_with_transaction_state if @transaction_state&.finalized?
       !(@new_record || @destroyed)
     end
 
@@ -530,7 +531,6 @@ module ActiveRecord
     def destroy
       _raise_readonly_record_error if readonly?
       destroy_associations
-      self.class.connection.add_transaction_record(self)
       @_trigger_destroy_callback = if persisted?
         destroy_row > 0
       else
@@ -664,8 +664,13 @@ module ActiveRecord
       raise ActiveRecordError, "cannot update a new record" if new_record?
       raise ActiveRecordError, "cannot update a destroyed record" if destroyed?
 
+      attributes = attributes.transform_keys do |key|
+        name = key.to_s
+        self.class.attribute_aliases[name] || name
+      end
+
       attributes.each_key do |key|
-        verify_readonly_attribute(key.to_s)
+        verify_readonly_attribute(key)
       end
 
       id_in_database = self.id_in_database
@@ -675,7 +680,7 @@ module ActiveRecord
 
       affected_rows = self.class._update_record(
         attributes,
-        self.class.primary_key => id_in_database
+        @primary_key => id_in_database
       )
 
       affected_rows == 1
@@ -844,15 +849,12 @@ module ActiveRecord
     #   ball.touch(:updated_at)   # => raises ActiveRecordError
     #
     def touch(*names, time: nil)
-      unless persisted?
-        raise ActiveRecordError, <<-MSG.squish
-          cannot touch on a new or destroyed record object. Consider using
-          persisted?, new_record?, or destroyed? before touching
-        MSG
-      end
+      _raise_record_not_touched_error unless persisted?
 
       attribute_names = timestamp_attributes_for_update_in_model
-      attribute_names |= names.map(&:to_s)
+      attribute_names |= names.map!(&:to_s).map! { |name|
+        self.class.attribute_aliases[name] || name
+      }
 
       unless attribute_names.empty?
         affected_rows = _touch_row(attribute_names, time)
@@ -873,15 +875,14 @@ module ActiveRecord
     end
 
     def _delete_row
-      self.class._delete_record(self.class.primary_key => id_in_database)
+      self.class._delete_record(@primary_key => id_in_database)
     end
 
     def _touch_row(attribute_names, time)
       time ||= current_time_from_proper_timezone
 
       attribute_names.each do |attr_name|
-        write_attribute(attr_name, time)
-        clear_attribute_change(attr_name)
+        _write_attribute(attr_name, time)
       end
 
       _update_row(attribute_names, "touch")
@@ -890,7 +891,7 @@ module ActiveRecord
     def _update_row(attribute_names, attempted_action = "update")
       self.class._update_record(
         attributes_with_values(attribute_names),
-        self.class.primary_key => id_in_database
+        @primary_key => id_in_database
       )
     end
 
@@ -928,7 +929,7 @@ module ActiveRecord
         attributes_with_values(attribute_names)
       )
 
-      self.id ||= new_id if self.class.primary_key
+      self.id ||= new_id if @primary_key
 
       @new_record = false
 
@@ -938,7 +939,7 @@ module ActiveRecord
     end
 
     def verify_readonly_attribute(name)
-      raise ActiveRecordError, "#{name} is marked as readonly" if self.class.readonly_attributes.include?(name)
+      raise ActiveRecordError, "#{name} is marked as readonly" if self.class.readonly_attribute?(name)
     end
 
     def _raise_record_not_destroyed
@@ -948,14 +949,21 @@ module ActiveRecord
       @_association_destroy_exception = nil
     end
 
+    def _raise_readonly_record_error
+      raise ReadOnlyRecord, "#{self.class} is marked as readonly"
+    end
+
+    def _raise_record_not_touched_error
+      raise ActiveRecordError, <<~MSG.squish
+        Cannot touch on a new or destroyed record object. Consider using
+        persisted?, new_record?, or destroyed? before touching.
+      MSG
+    end
+
     # The name of the method used to touch a +belongs_to+ association when the
     # +:touch+ option is used.
     def belongs_to_touch_method
       :touch
-    end
-
-    def _raise_readonly_record_error
-      raise ReadOnlyRecord, "#{self.class} is marked as readonly"
     end
   end
 end

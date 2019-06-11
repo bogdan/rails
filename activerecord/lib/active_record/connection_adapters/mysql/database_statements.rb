@@ -26,6 +26,15 @@ module ActiveRecord
           !READ_QUERY.match?(sql)
         end
 
+        def explain(arel, binds = [])
+          sql     = "EXPLAIN #{to_sql(arel, binds)}"
+          start   = Concurrent.monotonic_time
+          result  = exec_query(sql, "EXPLAIN", binds)
+          elapsed = Concurrent.monotonic_time - start
+
+          MySQL::ExplainPrettyPrinter.new.pp(result, elapsed)
+        end
+
         # Executes the SQL statement in the context of this connection.
         def execute(sql, name = nil)
           if preventing_writes? && write_query?(sql)
@@ -61,7 +70,9 @@ module ActiveRecord
 
         def exec_delete(sql, name = nil, binds = [])
           if without_prepared_statement?(binds)
-            execute_and_free(sql, name) { @connection.affected_rows }
+            @lock.synchronize do
+              execute_and_free(sql, name) { @connection.affected_rows }
+            end
           else
             exec_stmt_and_free(sql, name, binds) { |stmt| stmt.affected_rows }
           end

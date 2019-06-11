@@ -64,10 +64,12 @@ These configuration methods are to be called on a `Rails::Railtie` object, such 
 
 * `config.autoload_paths` accepts an array of paths from which Rails will autoload constants. Default is all directories under `app`. It is no longer recommended to adjust this. See [Autoloading and Reloading Constants](autoloading_and_reloading_constants.html#autoload-paths-and-eager-load-paths)
 
+* `config.add_autoload_paths_to_load_path` says whether autoload paths have to be added to `$LOAD_PATH`. This flag is `true` by default, but it is recommended to be set to `false` in `:zeitwerk` mode early, in `config/application.rb`. Zeitwerk uses absolute paths internally, and applications running in `:zeitwerk` mode do not need `require_dependency`, so models, controllers, jobs, etc. do not need to be in `$LOAD_PATH`. Setting this to `false` saves Ruby from checking these directories when resolving `require` calls with relative paths, and saves Bootsnap work and RAM, since it does not need to build an index for them.
+
 * `config.cache_classes` controls whether or not application classes and modules should be reloaded on each request. Defaults to `false` in development mode, and `true` in test and production modes.
 
 * `config.beginning_of_week` sets the default beginning of week for the
-application. Accepts a valid week day symbol (e.g. `:monday`).
+application. Accepts a valid day of week as a symbol (e.g. `:monday`).
 
 * `config.cache_store` configures which cache store to use for Rails caching. Options include one of the symbols `:memory_store`, `:file_store`, `:mem_cache_store`, `:null_store`, `:redis_cache_store`, or an object that implements the cache API. Defaults to `:file_store`.
 
@@ -143,7 +145,7 @@ defaults to `:debug` for all environments. The available log levels are: `:debug
 
 * `secret_key_base` is used for specifying a key which allows sessions for the application to be verified against a known secure key to prevent tampering. Applications get a random generated key in test and development environments, other environments should set one in `config/credentials.yml.enc`.
 
-* `config.public_file_server.enabled` configures Rails to serve static files from the public directory. This option defaults to `true`, but in the production environment it is set to `false` because the server software (e.g. NGINX or Apache) used to run the application should serve static files instead. If you are running or testing your app in production mode using WEBrick (it is not recommended to use WEBrick in production) set the option to `true.` Otherwise, you won't be able to use page caching and request for files that exist under the public directory.
+* `config.public_file_server.enabled` configures Rails to serve static files from the public directory. This option defaults to `true`, but in the production environment it is set to `false` because the server software (e.g. NGINX or Apache) used to run the application should serve static files instead. If you are running or testing your app in production mode using WEBrick (it is not recommended to use WEBrick in production) set the option to `true`. Otherwise, you won't be able to use page caching and request for files that exist under the public directory.
 
 * `config.session_store` specifies what class to use to store the session. Possible values are `:cookie_store` which is the default, `:mem_cache_store`, and `:disabled`. The last one tells Rails not to deal with sessions. Defaults to a cookie store with application name as the session key. Custom session stores can also be specified:
 
@@ -154,6 +156,13 @@ defaults to `:debug` for all environments. The available log levels are: `:debug
     This custom store must be defined as `ActionDispatch::Session::MyCustomStore`.
 
 * `config.time_zone` sets the default time zone for the application and enables time zone awareness for Active Record.
+
+* `config.autoloader` sets the autoloading mode. This option defaults to `:zeitwerk` if `6.0` is specified in `config.load_defaults`. Applications can still use the classic autoloader by setting this value to `:classic` after loading the framework defaults:
+
+    ```ruby
+    config.load_defaults "6.0"
+    config.autoloader = :classic
+    ```
 
 ### Configuring Assets
 
@@ -381,6 +390,12 @@ All these configuration options are delegated to the `I18n` library.
   having to send a query to the database to get this information.
   Defaults to `true`.
 
+* `config.active_record.collection_cache_versioning` enables the same cache key
+  to be reused when the object being cached of type `ActiveRecord::Relation`
+  changes by moving the volatile information (max updated at and count) of
+  the relation's cache key into the cache version to support recycling cache key.
+  Defaults to `false`.
+
 The MySQL adapter adds one additional configuration option:
 
 * `ActiveRecord::ConnectionAdapters::Mysql2Adapter.emulate_booleans` controls whether Active Record will consider all `tinyint(1)` columns as booleans. Defaults to `true`.
@@ -409,7 +424,7 @@ The schema dumper adds two additional configuration options:
 
 * `config.action_controller.asset_host` sets the host for the assets. Useful when CDNs are used for hosting assets rather than the application server itself.
 
-* `config.action_controller.perform_caching` configures whether the application should perform the caching features provided by the Action Controller component or not. Set to `false` in development mode, `true` in production.
+* `config.action_controller.perform_caching` configures whether the application should perform the caching features provided by the Action Controller component or not. Set to `false` in development mode, `true` in production. If it's not specified, the default will be `true`.
 
 * `config.action_controller.default_static_extension` configures the extension used for cached pages. Defaults to `.html`.
 
@@ -592,7 +607,7 @@ Defaults to `'signed cookie'`.
 
 * `config.action_view.form_with_generates_remote_forms` determines whether `form_with` generates remote forms or not. This defaults to `true`.
 
-* `config.action_view.form_with_generates_ids` determines whether `form_with` generates ids on inputs. This defaults to `true`.
+* `config.action_view.form_with_generates_ids` determines whether `form_with` generates ids on inputs. This defaults to `false`.
 
 * `config.action_view.default_enforce_utf8` determines whether forms are generated with a hidden tag that forces older versions of Internet Explorer to submit forms encoded in UTF-8. This defaults to `false`.
 
@@ -696,7 +711,7 @@ There are a number of settings available on `config.action_mailer`:
 * `config.action_mailer.deliver_later_queue_name` specifies the queue name for
   mailers. By default this is `mailers`.
 
-* `config.action_mailer.perform_caching` specifies whether the mailer templates should perform fragment caching or not. By default this is `false` in all environments.
+* `config.action_mailer.perform_caching` specifies whether the mailer templates should perform fragment caching or not. If it's not specified, the default will be `true`.
 
 * `config.action_mailer.delivery_job` specifies delivery job for mail. Defaults to `ActionMailer::DeliveryJob`.
 
@@ -837,6 +852,12 @@ text/javascript image/svg+xml application/postscript application/x-shockwave-fla
   config.active_storage.queues.purge = :low_priority
   ```
 
+* `config.active_storage.queues.mirror` accepts a symbol indicating the Active Job queue to use for direct upload mirroring jobs. The default is `:active_storage_mirror`.
+
+  ```ruby
+  config.active_storage.queues.mirror = :low_priority
+  ```
+
 * `config.active_storage.logger` can be used to set the logger used by Active Storage. Accepts a logger conforming to the interface of Log4r or the default Ruby Logger class.
 
   ```ruby
@@ -876,7 +897,7 @@ text/javascript image/svg+xml application/postscript application/x-shockwave-fla
 #### With '5.2':
 
 - `config.active_record.cache_versioning`: `true`
-- `action_dispatch.use_authenticated_cookie_encryption`: `true`
+- `config.action_dispatch.use_authenticated_cookie_encryption`: `true`
 - `config.active_support.use_authenticated_message_encryption`: `true`
 - `config.active_support.use_sha1_digests`: `true`
 - `config.action_controller.default_protect_from_forgery`: `true`
@@ -884,12 +905,14 @@ text/javascript image/svg+xml application/postscript application/x-shockwave-fla
 
 #### With '6.0':
 
+- `config.autoloader`: `:zeitwerk`
 - `config.action_view.default_enforce_utf8`: `false`
 - `config.action_dispatch.use_cookies_with_metadata`: `true`
 - `config.action_mailer.delivery_job`: `"ActionMailer::MailDeliveryJob"`
 - `config.active_job.return_false_on_aborted_enqueue`: `true`
 - `config.active_storage.queues.analysis`: `:active_storage_analysis`
 - `config.active_storage.queues.purge`: `:active_storage_purge`
+- `config.active_record.collection_cache_versioning`: `true`
 
 ### Configuring a Database
 
