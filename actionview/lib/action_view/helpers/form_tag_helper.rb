@@ -4,6 +4,7 @@ require "cgi"
 require "action_view/helpers/tag_helper"
 require "active_support/core_ext/string/output_safety"
 require "active_support/core_ext/module/attribute_accessors"
+require "active_support/core_ext/symbol/starts_ends_with"
 
 module ActionView
   # = Action View Form Tag Helpers
@@ -134,7 +135,7 @@ module ActionView
       #   #    <option selected="selected">MasterCard</option></select>
       def select_tag(name, option_tags = nil, options = {})
         option_tags ||= ""
-        html_name = (options[:multiple] == true && !name.to_s.ends_with?("[]")) ? "#{name}[]" : name
+        html_name = (options[:multiple] == true && !name.end_with?("[]")) ? "#{name}[]" : name
 
         if options.include?(:include_blank)
           include_blank = options[:include_blank]
@@ -166,6 +167,8 @@ module ActionView
       # * <tt>:size</tt> - The number of visible characters that will fit in the input.
       # * <tt>:maxlength</tt> - The maximum number of characters that the browser will allow the user to enter.
       # * <tt>:placeholder</tt> - The text contained in the field by default which is removed when the field receives focus.
+      #   If set to true, use a translation is found in the current I18n locale
+      #   (through helpers.placeholders.<modelname>.<attribute>).
       # * Any other key creates standard HTML attributes for the tag.
       #
       # ==== Examples

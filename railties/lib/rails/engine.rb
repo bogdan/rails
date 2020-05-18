@@ -3,6 +3,7 @@
 require "rails/railtie"
 require "rails/engine/railties"
 require "active_support/core_ext/module/delegation"
+require "active_support/core_ext/object/try"
 require "pathname"
 require "thread"
 
@@ -35,10 +36,10 @@ module Rails
   #
   # == Configuration
   #
-  # Besides the +Railtie+ configuration which is shared across the application, in a
-  # <tt>Rails::Engine</tt> you can access <tt>autoload_paths</tt>, <tt>eager_load_paths</tt>
-  # and <tt>autoload_once_paths</tt>, which, differently from a <tt>Railtie</tt>, are scoped to
-  # the current engine.
+  # Like railties, engines can access a config object which contains configuration shared by
+  # all railties and the application.
+  # Additionally, each engine can access <tt>autoload_paths</tt>, <tt>eager_load_paths</tt> and
+  # <tt>autoload_once_paths</tt> settings which are scoped to that engine.
   #
   #   class MyEngine < Rails::Engine
   #     # Add a load path for this specific Engine
@@ -112,7 +113,7 @@ module Rails
   # == Endpoint
   #
   # An engine can also be a Rack application. It can be useful if you have a Rack application that
-  # you would like to wrap with +Engine+ and provide with some of the +Engine+'s features.
+  # you would like to provide with some of the +Engine+'s features.
   #
   # To do that, use the +endpoint+ method:
   #
@@ -122,7 +123,7 @@ module Rails
   #     end
   #   end
   #
-  # Now you can mount your engine in application's routes just like that:
+  # Now you can mount your engine in application's routes:
   #
   #   Rails.application.routes.draw do
   #     mount MyEngine::Engine => "/engine"
@@ -228,7 +229,7 @@ module Rails
   #     resources :articles
   #   end
   #
-  # If +MyEngine+ is isolated, The routes above will point to
+  # If +MyEngine+ is isolated, the routes above will point to
   # <tt>MyEngine::ArticlesController</tt>. You also don't need to use longer
   # URL helpers like +my_engine_articles_path+. Instead, you should simply use
   # +articles_path+, like you would do with your main application.
@@ -313,7 +314,7 @@ module Rails
   #     helper MyEngine::Engine.helpers
   #   end
   #
-  # It will include all of the helpers from engine's directory. Take into account that this does
+  # It will include all of the helpers from engine's directory. Take into account this does
   # not include helpers defined in controllers with helper_method or other similar solutions,
   # only helpers defined in the helpers directory will be included.
   #
@@ -362,7 +363,7 @@ module Rails
           base.called_from = begin
             call_stack = caller_locations.map { |l| l.absolute_path || l.path }
 
-            File.dirname(call_stack.detect { |p| p !~ %r[railties[\w.-]*/lib/rails|rack[\w.-]*/lib/rack] })
+            File.dirname(call_stack.detect { |p| !p.match?(%r[railties[\w.-]*/lib/rails|rack[\w.-]*/lib/rack]) })
           end
         end
 
@@ -470,7 +471,8 @@ module Rails
     end
 
     def eager_load!
-      # Already done by Zeitwerk::Loader.eager_load_all in the finisher.
+      # Already done by Zeitwerk::Loader.eager_load_all. We need this guard to
+      # easily provide a compatible API for both zeitwerk and classic modes.
       return if Rails.autoloaders.zeitwerk_enabled?
 
       config.eager_load_paths.each do |load_path|
@@ -559,6 +561,12 @@ module Rails
       end
     end
 
+    initializer :load_environment_config, before: :load_environment_hook, group: :all do
+      paths["config/environments"].existent.each do |environment|
+        require environment
+      end
+    end
+
     initializer :set_load_path, before: :bootstrap_hook do |app|
       _all_load_paths(app.config.add_autoload_paths_to_load_path).reverse_each do |path|
         $LOAD_PATH.unshift(path) if File.directory?(path)
@@ -586,10 +594,13 @@ module Rails
 
     initializer :add_routing_paths do |app|
       routing_paths = paths["config/routes.rb"].existent
+      external_paths = self.paths["config/routes"].paths
+      routes.draw_paths.concat(external_paths)
 
       if routes? || routing_paths.any?
         app.routes_reloader.paths.unshift(*routing_paths)
         app.routes_reloader.route_sets << routes
+        app.routes_reloader.external_routes.unshift(*external_paths)
       end
     end
 
@@ -604,12 +615,6 @@ module Rails
       unless views.empty?
         ActiveSupport.on_load(:action_controller) { prepend_view_path(views) if respond_to?(:prepend_view_path) }
         ActiveSupport.on_load(:action_mailer) { prepend_view_path(views) }
-      end
-    end
-
-    initializer :load_environment_config, before: :load_environment_hook, group: :all do
-      paths["config/environments"].existent.each do |environment|
-        require environment
       end
     end
 
@@ -654,14 +659,12 @@ module Rails
     end
 
     protected
-
       def run_tasks_blocks(*) #:nodoc:
         super
         paths["lib/tasks"].existent.sort.each { |ext| load(ext) }
       end
 
     private
-
       def load_config_initializer(initializer) # :doc:
         ActiveSupport::Notifications.instrument("load_config_initializer.railties", initializer: initializer) do
           load(initializer)

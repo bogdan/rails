@@ -15,12 +15,12 @@ module ActionDispatch
         @cache  = nil
       end
 
-      def generate(name, options, path_parameters, parameterize = nil)
+      def generate(name, options, path_parameters, method_name = nil)
         constraints = path_parameters.merge(options)
         missing_keys = nil
 
         match_route(name, constraints) do |route|
-          parameterized_parts = extract_parameterized_parts(route, options, path_parameters, parameterize)
+          parameterized_parts = extract_parameterized_parts(route, options, path_parameters)
 
           # Skip this route unless a name has been provided or it is a
           # standard Rails route since we can't determine whether an options
@@ -54,7 +54,7 @@ module ActionDispatch
         message << ", missing required keys: #{missing_keys.sort.inspect}" if missing_keys && !missing_keys.empty?
         message << ", possible unmatched constraints: #{unmatched_keys.sort.inspect}" if unmatched_keys && !unmatched_keys.empty?
 
-        raise ActionController::UrlGenerationError, message
+        raise ActionController::UrlGenerationError.new(message, routes, name, method_name)
       end
 
       def clear
@@ -62,8 +62,7 @@ module ActionDispatch
       end
 
       private
-
-        def extract_parameterized_parts(route, options, recall, parameterize = nil)
+        def extract_parameterized_parts(route, options, recall)
           parameterized_parts = recall.merge(options)
 
           keys_to_keep = route.parts.reverse_each.drop_while { |part|
@@ -74,9 +73,11 @@ module ActionDispatch
             !keys_to_keep.include?(bad_key)
           end
 
-          if parameterize
-            parameterized_parts.each do |k, v|
-              parameterized_parts[k] = parameterize.call(k, v)
+          parameterized_parts.each do |k, v|
+            if k == :controller
+              parameterized_parts[k] = v
+            else
+              parameterized_parts[k] = v.to_param
             end
           end
 
@@ -126,19 +127,10 @@ module ActionDispatch
           routes
         end
 
-        module RegexCaseComparator
-          DEFAULT_INPUT = /[-_.a-zA-Z0-9]+\/[-_.a-zA-Z0-9]+/
-          DEFAULT_REGEX = /\A#{DEFAULT_INPUT}\Z/
-
-          def self.===(regex)
-            DEFAULT_INPUT == regex
-          end
-        end
-
         # Returns an array populated with missing keys if any are present.
         def missing_keys(route, parts)
           missing_keys = nil
-          tests = route.path.requirements
+          tests = route.path.requirements_for_missing_keys_check
           route.required_parts.each { |key|
             case tests[key]
             when nil
@@ -146,13 +138,8 @@ module ActionDispatch
                 missing_keys ||= []
                 missing_keys << key
               end
-            when RegexCaseComparator
-              unless RegexCaseComparator::DEFAULT_REGEX === parts[key]
-                missing_keys ||= []
-                missing_keys << key
-              end
             else
-              unless /\A#{tests[key]}\Z/ === parts[key]
+              unless tests[key].match?(parts[key])
                 missing_keys ||= []
                 missing_keys << key
               end

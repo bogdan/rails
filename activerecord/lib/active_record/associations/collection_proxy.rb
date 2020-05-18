@@ -27,7 +27,7 @@ module ActiveRecord
     # is computed directly through SQL and does not trigger by itself the
     # instantiation of the actual post records.
     class CollectionProxy < Relation
-      def initialize(klass, association) #:nodoc:
+      def initialize(klass, association, **) #:nodoc:
         @association = association
         super klass
 
@@ -100,7 +100,7 @@ module ActiveRecord
       # converting them into an array and iterating through them using
       # Array#select.
       #
-      #   person.pets.select { |pet| pet.name =~ /oo/ }
+      #   person.pets.select { |pet| /oo/.match?(pet.name) }
       #   # => [
       #   #      #<Pet id: 2, name: "Spook", person_id: 1>,
       #   #      #<Pet id: 3, name: "Choo-Choo", person_id: 1>
@@ -373,7 +373,7 @@ module ActiveRecord
       #   person.pets
       #   # => [#<Pet id: 1, name: "Gorby", group: "cats", person_id: 1>]
       #
-      #   other_pets = [Pet.new(name: 'Puff', group: 'celebrities']
+      #   other_pets = [Pet.new(name: 'Puff', group: 'celebrities')]
       #
       #   person.pets.replace(other_pets)
       #
@@ -920,7 +920,7 @@ module ActiveRecord
         !!@association.include?(record)
       end
 
-      def proxy_association
+      def proxy_association # :nodoc:
         @association
       end
 
@@ -1096,12 +1096,13 @@ module ActiveRecord
         SpawnMethods,
       ].flat_map { |klass|
         klass.public_instance_methods(false)
-      } - self.public_instance_methods(false) - [:select] + [:scoping, :values]
+      } - self.public_instance_methods(false) - [:select] + [
+        :scoping, :values, :insert, :insert_all, :insert!, :insert_all!, :upsert, :upsert_all
+      ]
 
       delegate(*delegate_methods, to: :scope)
 
       private
-
         def find_nth_with_limit(index, limit)
           load_target if find_from_target?
           super

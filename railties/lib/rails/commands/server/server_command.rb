@@ -5,6 +5,7 @@ require "action_dispatch"
 require "rails"
 require "active_support/deprecation"
 require "active_support/core_ext/string/filters"
+require "active_support/core_ext/symbol/starts_ends_with"
 require "rails/dev_caching"
 require "rails/command/environment_argument"
 
@@ -96,10 +97,10 @@ module Rails
 
       # Hard-coding a bunch of handlers here as we don't have a public way of
       # querying them from the Rack::Handler registry.
-      RACK_SERVERS = %w(cgi fastcgi webrick lsws scgi thin puma unicorn)
+      RACK_SERVERS = %w(cgi fastcgi webrick lsws scgi thin puma unicorn falcon)
 
       DEFAULT_PORT = 3000
-      DEFAULT_PID_PATH = "tmp/pids/server.pid"
+      DEFAULT_PIDFILE = "tmp/pids/server.pid"
 
       argument :using, optional: true
 
@@ -114,8 +115,8 @@ module Rails
         desc: "Runs server as a Daemon."
       class_option :using, aliases: "-u", type: :string,
         desc: "Specifies the Rack server used to run the application (thin/puma/webrick).", banner: :name
-      class_option :pid, aliases: "-P", type: :string, default: DEFAULT_PID_PATH,
-        desc: "Specifies the PID file."
+      class_option :pid, aliases: "-P", type: :string,
+        desc: "Specifies the PID file - defaults to #{DEFAULT_PIDFILE}."
       class_option :dev_caching, aliases: "-C", type: :boolean, default: nil,
         desc: "Specifies whether to perform caching in development."
       class_option :restart, type: :boolean, default: nil, hide: true
@@ -178,7 +179,7 @@ module Rails
             #   ["-p3001", "-C", "--binding", "127.0.0.1"] # => {"-p"=>true, "-C"=>true, "--binding"=>true}
             user_flag = {}
             @original_options.each do |command|
-              if command.to_s.start_with?("--")
+              if command.start_with?("--")
                 option = command.split("=")[0]
                 user_flag[option] = true
               elsif command =~ /\A(-.)/
@@ -207,6 +208,7 @@ module Rails
             end
             user_supplied_options << :Host if ENV["HOST"] || ENV["BINDING"]
             user_supplied_options << :Port if ENV["PORT"]
+            user_supplied_options << :pid if ENV["PIDFILE"]
             user_supplied_options.uniq
           end
         end
@@ -253,7 +255,7 @@ module Rails
         end
 
         def pid
-          File.expand_path(options[:pid])
+          File.expand_path(options[:pid] || ENV.fetch("PIDFILE", DEFAULT_PIDFILE))
         end
 
         def self.banner(*)
@@ -261,7 +263,7 @@ module Rails
         end
 
         def prepare_restart
-          FileUtils.rm_f(options[:pid]) if options[:restart]
+          FileUtils.rm_f(pid) if options[:restart]
         end
 
         def deprecate_positional_rack_server_and_rewrite_to_option(original_options)
@@ -287,7 +289,7 @@ module Rails
 
                 gem "#{server}"
 
-              Run `rails server --help` for more options.
+              Run `bin/rails server --help` for more options.
             MSG
           else
             suggestion = Rails::Command::Spellchecker.suggest(server, from: RACK_SERVERS)
@@ -295,7 +297,7 @@ module Rails
 
             <<~MSG
               Could not find server "#{server}". #{suggestion_msg}
-              Run `rails server --help` for more options.
+              Run `bin/rails server --help` for more options.
             MSG
           end
         end
@@ -304,7 +306,7 @@ module Rails
           say <<~MSG
             => Booting #{ActiveSupport::Inflector.demodulize(server)}
             => Rails #{Rails.version} application starting in #{Rails.env} #{url}
-            => Run `rails server --help` for more startup options
+            => Run `bin/rails server --help` for more startup options
           MSG
         end
     end

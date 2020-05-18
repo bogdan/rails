@@ -611,7 +611,7 @@ module ApplicationTests
           default from: "from@example.com"
 
           def foo
-            attachments['pixel.png'] = File.read("#{app_path}/public/images/pixel.png", mode: 'rb')
+            attachments['pixel.png'] = File.binread("#{app_path}/public/images/pixel.png")
             mail to: "to@example.org"
           end
         end
@@ -648,7 +648,7 @@ module ApplicationTests
           default from: "from@example.com"
 
           def foo
-            attachments['pixel.png'] = File.read("#{app_path}/public/images/pixel.png", mode: 'rb')
+            attachments['pixel.png'] = File.binread("#{app_path}/public/images/pixel.png")
             mail to: "to@example.org"
           end
         end
@@ -693,7 +693,7 @@ module ApplicationTests
           default from: "from@example.com"
 
           def foo
-            attachments['pixel.png'] = File.read("#{app_path}/public/images/pixel.png", mode: 'rb')
+            attachments['pixel.png'] = File.binread("#{app_path}/public/images/pixel.png")
             mail to: "to@example.org"
           end
         end
@@ -821,6 +821,35 @@ module ApplicationTests
 
       get "/rails/mailers/notifier/foo?part=text/html"
       assert_equal 200, last_response.status
+    end
+
+    test "mailer preview title tag" do
+      mailer "notifier", <<-RUBY
+        class Notifier < ActionMailer::Base
+          default from: "from@example.com"
+
+          def foo
+            mail to: "to@example.org"
+          end
+        end
+      RUBY
+
+      text_template "notifier/foo", <<-RUBY
+        Hello, World!
+      RUBY
+
+      mailer_preview "notifier", <<-RUBY
+        class NotifierPreview < ActionMailer::Preview
+          def foo
+            Notifier.foo
+          end
+        end
+      RUBY
+
+      app("development")
+
+      get "/rails/mailers/notifier/foo"
+      assert_match "<title>Mailer Preview for notifier#foo</title>", last_response.body
     end
 
     private

@@ -3,6 +3,7 @@
 require "mutex_m"
 require "concurrent/map"
 require "set"
+require "active_support/core_ext/object/try"
 
 module ActiveSupport
   module Notifications
@@ -101,10 +102,6 @@ module ActiveSupport
           end
 
           wrap_all pattern, subscriber_class.new(pattern, listener)
-        end
-
-        def self.event_object_subscriber(pattern, block)
-          wrap_all pattern, EventObject.new(pattern, block)
         end
 
         def self.wrap_all(pattern, subscriber)
@@ -218,6 +215,7 @@ module ActiveSupport
           def finish(name, id, payload)
             stack = Thread.current[:_event_stack]
             event = stack.pop
+            event.payload = payload
             event.finish!
             @delegate.call event
           end

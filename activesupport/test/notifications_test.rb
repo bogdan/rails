@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "abstract_unit"
+require_relative "abstract_unit"
 require "active_support/core_ext/module/delegation"
 
 module Notifications
@@ -20,7 +20,6 @@ module Notifications
     end
 
   private
-
     def event(*args)
       ActiveSupport::Notifications::Event.new(*args)
     end
@@ -40,6 +39,27 @@ module Notifications
       assert_operator event.cpu_time, :>, 0
       assert_operator event.idle_time, :>, 0
       assert_operator event.duration, :>, 0
+    end
+
+    def test_subscribe_to_events_where_payload_is_changed_during_instrumentation
+      @notifier.subscribe do |event|
+        assert_equal "success!", event.payload[:my_key]
+      end
+
+      ActiveSupport::Notifications.instrument("foo") do |payload|
+        payload[:my_key] = "success!"
+      end
+    end
+
+    def test_subscribe_to_events_can_handle_nested_hashes_in_the_paylaod
+      @notifier.subscribe do |event|
+        assert_equal "success!", event.payload[:some_key][:key_one]
+        assert_equal "great_success!", event.payload[:some_key][:key_two]
+      end
+
+      ActiveSupport::Notifications.instrument("foo", some_key: { key_one: "success!" }) do |payload|
+        payload[:some_key][:key_two] = "great_success!"
+      end
     end
 
     def test_subscribe_via_top_level_api

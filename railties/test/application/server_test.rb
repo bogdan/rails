@@ -23,7 +23,7 @@ module ApplicationTests
 
       File.open("#{app_path}/config/boot.rb", "w") do |f|
         f.puts "ENV['BUNDLE_GEMFILE'] = '#{Bundler.default_gemfile}'"
-        f.puts "require 'bundler/setup'"
+        f.puts 'require "bundler/setup"'
       end
 
       primary, replica = PTY.open
@@ -36,7 +36,7 @@ module ApplicationTests
         rails("restart")
 
         assert_output("Restarting", primary)
-        assert_output("tcp://localhost:3000", primary)
+        assert_output("Listening", primary)
       ensure
         kill(pid) if pid
       end

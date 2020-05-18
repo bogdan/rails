@@ -58,6 +58,11 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
     end
   end
 
+  test "each without a block returns an enumerator" do
+    assert_kind_of Enumerator, @params.each
+    assert_equal @params, @params.each.to_h
+  end
+
   test "each_pair carries permitted status" do
     @params.permit!
     @params.each_pair { |key, value| assert(value.permitted?) if key == "person" }
@@ -75,6 +80,11 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
     end
   end
 
+  test "each_pair without a block returns an enumerator" do
+    assert_kind_of Enumerator, @params.each_pair
+    assert_equal @params, @params.each_pair.to_h
+  end
+
   test "each_value carries permitted status" do
     @params.permit!
     @params.each_value do |value|
@@ -88,6 +98,11 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
     end
   end
 
+  test "each_value without a block returns an enumerator" do
+    assert_kind_of Enumerator, @params.each_value
+    assert_equal @params.values, @params.each_value.to_a
+  end
+
   test "each_key converts to hash for permitted" do
     @params.permit!
     @params.each_key { |key| assert_kind_of(String, key) if key == "person" }
@@ -95,6 +110,11 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
 
   test "each_key converts to hash for unpermitted" do
     @params.each_key { |key| assert_kind_of(String, key) if key == "person" }
+  end
+
+  test "each_key without a block returns an enumerator" do
+    assert_kind_of Enumerator, @params.each_key
+    assert_equal @params.keys, @params.each_key.to_a
   end
 
   test "empty? returns true when params contains no key/value pairs" do
@@ -160,6 +180,14 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
 
   test "key? returns false if the given key is not present in the params" do
     assert_not @params.key?(:address)
+  end
+
+  test "member? returns true if the given key is present in the params" do
+    assert @params.member?(:person)
+  end
+
+  test "member? returns false if the given key is not present in the params" do
+    assert_not @params.member?(:address)
   end
 
   test "keys returns an array of the keys of the params" do
@@ -284,12 +312,14 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
     params1 = ActionController::Parameters.new(a: 1, b: 2)
     params2 = ActionController::Parameters.new(a: 1, b: 2)
     assert(params1 == params2)
+    assert(params1.hash == params2.hash)
   end
 
   test "is equal to Parameters instance with same permitted params" do
     params1 = ActionController::Parameters.new(a: 1, b: 2).permit(:a)
     params2 = ActionController::Parameters.new(a: 1, b: 2).permit(:a)
     assert(params1 == params2)
+    assert(params1.hash == params2.hash)
   end
 
   test "is equal to Parameters instance with same different source params, but same permitted params" do
@@ -297,6 +327,8 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
     params2 = ActionController::Parameters.new(a: 1, c: 3).permit(:a)
     assert(params1 == params2)
     assert(params2 == params1)
+    assert(params1.hash == params2.hash)
+    assert(params2.hash == params1.hash)
   end
 
   test "is not equal to an unpermitted Parameters instance with same params" do
@@ -304,6 +336,8 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
     params2 = ActionController::Parameters.new(a: 1)
     assert(params1 != params2)
     assert(params2 != params1)
+    assert(params1.hash != params2.hash)
+    assert(params2.hash != params1.hash)
   end
 
   test "is not equal to Parameters instance with different permitted params" do
@@ -311,6 +345,8 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
     params2 = ActionController::Parameters.new(a: 1, b: 2).permit(:a)
     assert(params1 != params2)
     assert(params2 != params1)
+    assert(params1.hash != params2.hash)
+    assert(params2.hash != params1.hash)
   end
 
   test "equality with simple types works" do

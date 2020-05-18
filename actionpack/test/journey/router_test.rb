@@ -224,22 +224,6 @@ module ActionDispatch
         assert_equal "/", path
       end
 
-      def test_generate_calls_param_proc
-        get "/:controller(/:action)", to: "foo#bar"
-
-        parameterized = []
-        params = [ [:controller, "tasks"],
-                   [:action, "show"] ]
-
-        @formatter.generate(
-          nil,
-          Hash[params],
-          {},
-          lambda { |k, v| parameterized << [k, v]; v })
-
-        assert_equal params.map(&:to_s).sort, parameterized.map(&:to_s).sort
-      end
-
       def test_generate_id
         get "/:controller(/:action)", to: "foo#bar"
 
@@ -503,7 +487,6 @@ module ActionDispatch
       end
 
       private
-
         def get(*args)
           ActiveSupport::Deprecation.silence do
             mapper.get(*args)

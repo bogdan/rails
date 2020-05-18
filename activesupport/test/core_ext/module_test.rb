@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "abstract_unit"
+require_relative "../abstract_unit"
 require "active_support/core_ext/module"
 
 Somewhere = Struct.new(:street, :city) do
@@ -24,8 +24,11 @@ Someone = Struct.new(:name, :place) do
   self::FAILED_DELEGATE_LINE_2 = __LINE__ + 1
   delegate :bar, to: :place, allow_nil: true
 
-  private
+  def kw_send(method:)
+    public_send(method)
+  end
 
+  private
     def private_name
       "Private"
     end
@@ -109,6 +112,24 @@ class DecoratedReserved
 
   def initialize(kase)
     @case = kase
+  end
+end
+
+class Maze
+  attr_accessor :cavern, :passages
+end
+
+class Cavern
+  delegate_missing_to :target
+
+  attr_reader :maze
+
+  def initialize(maze)
+    @maze = maze
+  end
+
+  def target
+    @maze.passages = :twisty
   end
 end
 
@@ -257,7 +278,7 @@ class ModuleTest < ActiveSupport::TestCase
     assert_nil rails.name
   end
 
-  # Ensures with check for nil, not for a falseish target.
+  # Ensures with check for nil, not for a falsy target.
   def test_delegation_with_allow_nil_and_false_value
     project = Project.new(false, false)
     assert_raise(NoMethodError) { project.name }
@@ -368,6 +389,10 @@ class ModuleTest < ActiveSupport::TestCase
     assert_equal "David", DecoratedReserved.new(@david).name
   end
 
+  def test_delegate_missing_to_with_keyword_methods
+    assert_equal "David", DecoratedReserved.new(@david).kw_send(method: "name")
+  end
+
   def test_delegate_missing_to_does_not_delegate_to_private_methods
     e = assert_raises(NoMethodError) do
       DecoratedReserved.new(@david).private_name
@@ -410,6 +435,17 @@ class ModuleTest < ActiveSupport::TestCase
     assert_equal 42, DecoratedTester.new(@david).extra_missing
 
     assert_respond_to DecoratedTester.new(@david), :extra_missing
+  end
+
+  def test_delegate_missing_to_does_not_interfere_with_marshallization
+    maze = Maze.new
+    maze.cavern = Cavern.new(maze)
+
+    array = [maze, nil]
+    serialized_array = Marshal.dump(array)
+    deserialized_array = Marshal.load(serialized_array)
+
+    assert_nil deserialized_array[1]
   end
 
   def test_delegate_with_case
