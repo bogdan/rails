@@ -4,6 +4,7 @@ require "active_support/core_ext/hash/slice"
 require "active_support/core_ext/enumerable"
 require "active_support/core_ext/array/extract_options"
 require "active_support/core_ext/regexp"
+require "active_support/core_ext/symbol/starts_ends_with"
 require "action_dispatch/routing/redirection"
 require "action_dispatch/routing/endpoint"
 
@@ -112,7 +113,7 @@ module ActionDispatch
         end
 
         def self.optional_format?(path, format)
-          format != false && path !~ OPTIONAL_FORMAT_REGEX
+          format != false && !path.match?(OPTIONAL_FORMAT_REGEX)
         end
 
         def initialize(set:, ast:, controller:, default_action:, to:, formatted:, via:, options_constraints:, anchor:, scope_params:, options:)
@@ -355,7 +356,7 @@ module ActionDispatch
 
           def add_controller_module(controller, modyoule)
             if modyoule && !controller.is_a?(Regexp)
-              if %r{\A/}.match?(controller)
+              if controller&.start_with?("/")
                 controller[1..-1]
               else
                 [modyoule, controller].compact.join("/")
@@ -367,7 +368,7 @@ module ActionDispatch
 
           def translate_controller(controller)
             return controller if Regexp === controller
-            return controller.to_s if controller =~ /\A[a-z_0-9][a-z_0-9\/]*\z/
+            return controller.to_s if /\A[a-z_0-9][a-z_0-9\/]*\z/.match?(controller)
 
             yield
           end
@@ -398,12 +399,23 @@ module ActionDispatch
           end
       end
 
-      # Invokes Journey::Router::Utils.normalize_path and ensure that
-      # (:locale) becomes (/:locale) instead of /(:locale). Except
-      # for root cases, where the latter is the correct one.
+      # Invokes Journey::Router::Utils.normalize_path, then ensures that
+      # /(:locale) becomes (/:locale). Except for root cases, where the
+      # former is the correct one.
       def self.normalize_path(path)
         path = Journey::Router::Utils.normalize_path(path)
-        path.gsub!(%r{/(\(+)/?}, '\1/') unless path =~ %r{^/(\(+[^)]+\)){1,}$}
+
+        # the path for a root URL at this point can be something like
+        # "/(/:locale)(/:platform)/(:browser)", and we would want
+        # "/(:locale)(/:platform)(/:browser)"
+
+        # reverse "/(", "/((" etc to "(/", "((/" etc
+        path.gsub!(%r{/(\(+)/?}, '\1/')
+        # if a path is all optional segments, change the leading "(/" back to
+        # "/(" so it evaluates to "/" when interpreted with no options.
+        # Unless, however, at least one secondary segment consists of a static
+        # part, ex. "(/:locale)(/pages/:page)"
+        path.sub!(%r{^(\(+)/}, '/\1') if %r{^(\(+[^)]+\))(\(+/:[^)]+\))*$}.match?(path)
         path
       end
 
@@ -560,7 +572,7 @@ module ActionDispatch
         #   Constrains parameters with a hash of regular expressions
         #   or an object that responds to <tt>matches?</tt>. In addition, constraints
         #   other than path can also be specified with any object
-        #   that responds to <tt>===</tt> (eg. String, Array, Range, etc.).
+        #   that responds to <tt>===</tt> (e.g. String, Array, Range, etc.).
         #
         #     match 'path/:id', constraints: { id: /[A-Z]\d{5}/ }, via: :get
         #
@@ -747,6 +759,14 @@ module ActionDispatch
         #   delete 'broccoli', to: 'food#broccoli'
         def delete(*args, &block)
           map_method(:delete, args, &block)
+        end
+
+        # Define a route that only recognizes HTTP OPTIONS.
+        # For supported arguments, see match[rdoc-ref:Base#match]
+        #
+        #   options 'carrots', to: 'food#carrots'
+        def options(*args, &block)
+          map_method(:options, args, &block)
         end
 
         private
@@ -996,7 +1016,7 @@ module ActionDispatch
         #
         # Requests to routes can be constrained based on specific criteria:
         #
-        #    constraints(-> (req) { req.env["HTTP_USER_AGENT"] =~ /iPhone/ }) do
+        #    constraints(-> (req) { /iPhone/.match?(req.env["HTTP_USER_AGENT"]) }) do
         #      resources :iphones
         #    end
         #
@@ -1006,7 +1026,7 @@ module ActionDispatch
         #
         #    class Iphone
         #      def self.matches?(request)
-        #        request.env["HTTP_USER_AGENT"] =~ /iPhone/
+        #        /iPhone/.match?(request.env["HTTP_USER_AGENT"])
         #      end
         #    end
         #
@@ -1599,6 +1619,22 @@ module ActionDispatch
           !parent_resource.singleton? && @scope[:shallow]
         end
 
+        def draw(name)
+          path = @draw_paths.find do |_path|
+            File.exist? "#{_path}/#{name}.rb"
+          end
+
+          unless path
+            msg  = "Your router tried to #draw the external file #{name}.rb,\n" \
+                   "but the file was not found in:\n\n"
+            msg += @draw_paths.map { |_path| " * #{_path}" }.join("\n")
+            raise ArgumentError, msg
+          end
+
+          route_path = "#{path}/#{name}.rb"
+          instance_eval(File.read(route_path), route_path.to_s)
+        end
+
         # Matches a URL pattern to one or more routes.
         # For more information, see match[rdoc-ref:Base#match].
         #
@@ -1673,7 +1709,6 @@ module ActionDispatch
         end
 
         private
-
           def parent_resource
             @scope[:scope_level_resource]
           end
@@ -1834,7 +1869,7 @@ module ActionDispatch
               # and return nil in case it isn't. Otherwise, we pass the invalid name
               # forward so the underlying router engine treats it and raises an exception.
               if as.nil?
-                candidate unless candidate !~ /\A[_a-z]/i || has_named_route?(candidate)
+                candidate unless !candidate.match?(/\A[_a-z]/i) || has_named_route?(candidate)
               else
                 candidate
               end
@@ -1888,7 +1923,7 @@ module ActionDispatch
             options_constraints = options.delete(:constraints) || {}
 
             path_types = paths.group_by(&:class)
-            path_types.fetch(String, []).each do |_path|
+            (path_types[String] || []).each do |_path|
               route_options = options.dup
               if _path && option_path
                 raise ArgumentError, "Ambiguous route definition. Both :path and the route path were specified as strings."
@@ -1897,7 +1932,7 @@ module ActionDispatch
               decomposed_match(_path, controller, route_options, _path, to, via, formatted, anchor, options_constraints)
             end
 
-            path_types.fetch(Symbol, []).each do |action|
+            (path_types[Symbol] || []).each do |action|
               route_options = options.dup
               decomposed_match(action, controller, route_options, option_path, to, via, formatted, anchor, options_constraints)
             end
@@ -1917,7 +1952,7 @@ module ActionDispatch
           end
 
           def using_match_shorthand?(path)
-            path =~ %r{^/?[-\w]+/[-\w/]+$}
+            %r{^/?[-\w]+/[-\w/]+$}.match?(path)
           end
 
           def decomposed_match(path, controller, options, _path, to, via, formatted, anchor, options_constraints)
@@ -2079,7 +2114,7 @@ module ActionDispatch
         # of routing helpers, e.g:
         #
         #   direct :homepage do
-        #     "http://www.rubyonrails.org"
+        #     "https://rubyonrails.org"
         #   end
         #
         #   direct :commentable do |model|
@@ -2278,6 +2313,7 @@ module ActionDispatch
 
       def initialize(set) #:nodoc:
         @set = set
+        @draw_paths = set.draw_paths
         @scope = Scope.new(path_names: @set.resources_path_names)
         @concerns = {}
       end

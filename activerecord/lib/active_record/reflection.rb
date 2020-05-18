@@ -183,20 +183,22 @@ module ActiveRecord
         scope_chain_items = join_scopes(table, predicate_builder)
         klass_scope       = klass_join_scope(table, predicate_builder)
 
+        if type
+          klass_scope.where!(type => foreign_klass.polymorphic_name)
+        end
+
+        scope_chain_items.inject(klass_scope, &:merge!)
+
         key         = join_keys.key
         foreign_key = join_keys.foreign_key
 
         klass_scope.where!(table[key].eq(foreign_table[foreign_key]))
 
-        if type
-          klass_scope.where!(type => foreign_klass.polymorphic_name)
-        end
-
         if klass.finder_needs_type_condition?
           klass_scope.where!(klass.send(:type_condition, table))
         end
 
-        scope_chain_items.inject(klass_scope, &:merge!)
+        klass_scope
       end
 
       def join_scopes(table, predicate_builder) # :nodoc:
@@ -304,6 +306,10 @@ module ActiveRecord
 
       def join_foreign_key
         active_record_primary_key
+      end
+
+      def strict_loading?
+        options[:strict_loading]
       end
 
       protected
@@ -590,7 +596,6 @@ module ActiveRecord
       end
 
       private
-
         def calculate_constructable(macro, options)
           true
         end
@@ -620,7 +625,7 @@ module ActiveRecord
             end
 
             if valid_inverse_reflection?(reflection)
-              return inverse_name
+              inverse_name
             end
           end
         end
@@ -704,7 +709,6 @@ module ActiveRecord
       end
 
       private
-
         def calculate_constructable(macro, options)
           !options[:through]
         end
@@ -776,7 +780,17 @@ module ActiveRecord
       end
 
       def klass
-        @klass ||= delegate_reflection.compute_class(class_name)
+        @klass ||= delegate_reflection.compute_class(class_name).tap do |klass|
+          if !parent_reflection.is_a?(HasAndBelongsToManyReflection) &&
+             !(klass.reflections.key?(options[:through].to_s) ||
+               klass.reflections.key?(options[:through].to_s.pluralize)) &&
+             active_record.type_for_attribute(active_record.primary_key).type != :integer
+            raise NotImplementedError, <<~MSG.squish
+              In order to correctly type cast #{active_record}.#{active_record.primary_key},
+              #{klass} needs to define a :#{options[:through]} association.
+            MSG
+          end
+        end
       end
 
       # Returns the source of the through reflection. It checks both a singularized

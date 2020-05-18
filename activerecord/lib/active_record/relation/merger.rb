@@ -7,15 +7,16 @@ module ActiveRecord
     class HashMerger # :nodoc:
       attr_reader :relation, :hash
 
-      def initialize(relation, hash)
+      def initialize(relation, hash, rewhere = nil)
         hash.assert_valid_keys(*Relation::VALUE_METHODS)
 
         @relation = relation
         @hash     = hash
+        @rewhere  = rewhere
       end
 
-      def merge #:nodoc:
-        Merger.new(relation, other).merge
+      def merge
+        Merger.new(relation, other, @rewhere).merge
       end
 
       # Applying values to a relation has some side effects. E.g.
@@ -48,10 +49,11 @@ module ActiveRecord
     class Merger # :nodoc:
       attr_reader :relation, :values, :other
 
-      def initialize(relation, other)
+      def initialize(relation, other, rewhere = nil)
         @relation = relation
         @values   = other.values
         @other    = other
+        @rewhere  = rewhere
       end
 
       NORMAL_VALUES = Relation::VALUE_METHODS -
@@ -89,7 +91,6 @@ module ActiveRecord
       end
 
       private
-
         def merge_preloads
           return if other.preload_values.empty? && other.includes_values.empty?
 
@@ -136,11 +137,16 @@ module ActiveRecord
           if other.klass == relation.klass
             relation.left_outer_joins!(*other.left_outer_joins_values)
           else
-            associations = other.left_outer_joins_values
+            associations, others = other.left_outer_joins_values.partition do |join|
+              case join
+              when Hash, Symbol, Array; true
+              end
+            end
+
             join_dependency = other.construct_join_dependency(
               associations, Arel::Nodes::OuterJoin
             )
-            relation.joins!(join_dependency)
+            relation.left_outer_joins!(join_dependency, *others)
           end
         end
 
@@ -168,7 +174,7 @@ module ActiveRecord
         def merge_clauses
           relation.from_clause = other.from_clause if replace_from_clause?
 
-          where_clause = relation.where_clause.merge(other.where_clause)
+          where_clause = relation.where_clause.merge(other.where_clause, @rewhere)
           relation.where_clause = where_clause unless where_clause.empty?
 
           having_clause = relation.having_clause.merge(other.having_clause)

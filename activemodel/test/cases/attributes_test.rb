@@ -107,5 +107,27 @@ module ActiveModel
 
       assert_equal attributes, new_attributes
     end
+
+    test "attributes can be dup-ed" do
+      data = ModelForAttributesTest.new
+      data.integer_field = 1
+
+      duped = data.dup
+
+      assert_equal 1, data.integer_field
+      assert_equal 1, duped.integer_field
+
+      duped.integer_field = 2
+
+      assert_equal 1, data.integer_field
+      assert_equal 2, duped.integer_field
+    end
+
+    test "can't modify attributes if frozen" do
+      data = ModelForAttributesTest.new
+      data.freeze
+      assert data.frozen?
+      assert_raise(FrozenError) { data.integer_field = 1 }
+    end
   end
 end

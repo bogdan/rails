@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "active_support/deprecation"
-
 module ActiveRecord
   module ConnectionAdapters # :nodoc:
     module DatabaseLimits
@@ -34,6 +32,7 @@ module ActiveRecord
       def allowed_index_name_length
         index_name_length
       end
+      deprecate :allowed_index_name_length
 
       # Returns the maximum length of an index name.
       def index_name_length
@@ -63,6 +62,7 @@ module ActiveRecord
       def in_clause_length
         nil
       end
+      deprecate :in_clause_length
 
       # Returns the maximum length of an SQL query.
       def sql_query_length

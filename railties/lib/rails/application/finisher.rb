@@ -60,7 +60,18 @@ module Rails
 
           #{unload_message}
 
-          Please, check the "Autoloading and Reloading Constants" guide for solutions.
+          In order to autoload safely at boot time, please wrap your code in a reloader
+          callback this way:
+
+              Rails.application.reloader.to_prepare do
+                # Autoload classes and modules needed at boot time here.
+              end
+
+          That block runs when the application boots, and every time there is a reload.
+          For historical reasons, it may run twice, so it has to be idempotent.
+
+          Check the "Autoloading and Reloading Constants" guide to learn more about how
+          Rails autoloads and reloads.
         WARNING
       end
 
@@ -216,7 +227,9 @@ module Rails
           app.reloader.check = lambda { true }
         end
 
-        if config.reload_classes_only_on_change
+        if config.cache_classes
+          # No reloader
+        elsif config.reload_classes_only_on_change
           reloader = config.file_watcher.new(*watchable_args, &callback)
           reloaders << reloader
 

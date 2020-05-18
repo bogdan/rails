@@ -39,7 +39,7 @@ When called without arguments like this, it creates a form tag which, when submi
 </form>
 ```
 
-You'll notice that the HTML contains an `input` element with type `hidden`. This `input` is important, because non-GET form cannot be successfully submitted without it.
+You'll notice that the HTML contains an `input` element with type `hidden`. This `input` is important, because non-GET forms cannot be successfully submitted without it.
 The hidden input element with the name `authenticity_token` is a security feature of Rails called **cross-site request forgery protection**, and form helpers generate it for every non-GET form (provided that this security feature is enabled). You can read more about this in the [Securing Rails Applications](security.html#cross-site-request-forgery-csrf) guide.
 
 ### A Generic Search Form
@@ -54,10 +54,10 @@ One of the most basic forms you see on the web is a search form. This form conta
 To create this form you will use `form_with`, `label_tag`, `text_field_tag`, and `submit_tag`, respectively. Like this:
 
 ```erb
-<%= form_with(url: "/search", method: "get") do %>
-  <%= label_tag(:q, "Search for:") %>
-  <%= text_field_tag(:q) %>
-  <%= submit_tag("Search") %>
+<%= form_with url: "/search", method: :get do |form| %>
+  <%= form.label :q, "Search for:" %>
+  <%= form.text_field :q %>
+  <%= form.submit "Search" %>
 <% end %>
 ```
 
@@ -236,10 +236,10 @@ end
 The corresponding view `app/views/articles/new.html.erb` using `form_with` looks like this:
 
 ```erb
-<%= form_with model: @article, class: "nifty_form" do |f| %>
-  <%= f.text_field :title %>
-  <%= f.text_area :body, size: "60x12" %>
-  <%= f.submit "Create" %>
+<%= form_with model: @article, class: "nifty_form" do |form| %>
+  <%= form.text_field :title %>
+  <%= form.text_area :body, size: "60x12" %>
+  <%= form.submit "Create" %>
 <% end %>
 ```
 
@@ -307,7 +307,7 @@ When dealing with RESTful resources, calls to `form_with` can get significantly 
 ## Creating a new article
 # long-style:
 form_with(model: @article, url: articles_path)
-short-style:
+# short-style:
 form_with(model: @article)
 
 ## Editing an existing article
@@ -317,7 +317,7 @@ form_with(model: @article, url: article_path(@article), method: "patch")
 form_with(model: @article)
 ```
 
-Notice how the short-style `form_with` invocation is conveniently the same, regardless of the record being new or existing. Record identification is smart enough to figure out if the record is new by asking `record.new_record?`. It also selects the correct path to submit to, and the name based on the class of the object.
+Notice how the short-style `form_with` invocation is conveniently the same, regardless of the record being new or existing. Record identification is smart enough to figure out if the record is new by asking `record.persisted?`. It also selects the correct path to submit to, and the name based on the class of the object.
 
 WARNING: When you're using STI (single-table inheritance) with your models, you can't rely on record identification on a subclass if only their parent class is declared a resource. You will have to specify `:url`, and `:scope` (the model name) explicitly.
 
@@ -621,6 +621,94 @@ The first parameter specifies which value should be selected and can either be a
 
 will produce the same output and the value chosen by the user can be retrieved by `params[:date][:year]`.
 
+Creating Checkboxes for Relations
+------------------------------------------
+
+Generating checkboxes options that act appropriately with Active Record models
+and strong parameters can be a confusing undertaking. Luckily there is a helper
+function to significantly reduce the work required.
+
+Here is what the markup may look like:
+
+```html
+<input type="checkbox" value="1" checked="checked" name="person[city_ids][]" id="person_cities_1" />
+<label for="person_cities_1">Pittsburgh</label>
+<input type="checkbox" value="2" checked="checked" name="person[city_ids][]" id="person_cities_2"/>
+<label for="person_cities_2">Madison</label>
+<input type="checkbox" value="3" checked="checked" name="person[city_ids][]" id="person_cities_3"/>
+<label for="person_cities_3">Santa Rosa</label>
+```
+
+You have a list of cities whose names are shown to the user and associated
+checkboxes that hold the id of each cities database entry.
+
+### The Collection Check Boxes tag
+
+The `collection_check_boxes` exists to help create these checkboxes with the
+name for each input that maps to params that can be passed directly to model
+relationships.
+
+In this example we show the currently associated records in a collection:
+
+```erb
+<%= form_with model: @person do |person_form| %>
+  <%= person_form.collection_check_boxes :city_ids, person.object.cities, :id, :name %>
+<% end %>
+```
+
+This returns
+
+```html
+<input type="checkbox" value="1" checked="checked" name="person[city_ids][]" id="person_cities_1" checked="checked" />
+<label for="person_cities_1">Pittsburgh</label>
+<input type="checkbox" value="2" checked="checked" name="person[city_ids][]" id="person_cities_2" checked="checked" />
+<label for="person_cities_2">Madison</label>
+<input type="checkbox" value="3" checked="checked" name="person[city_ids][]" id="person_cities_3" checked="checked" />
+<label for="person_cities_3">Santa Rosa</label>
+```
+
+You can also pass a block to format the html as you'd like:
+
+```erb
+<%= form_with model: @person do |person_form| %>
+  <%= person_form.collection_check_boxes :city_ids, City.all, :id, :name do |city| %>
+    <div>
+      <%= city.check_box %><%= city.label %>
+    </div>
+  <% end %>
+<% end %>
+```
+
+This returns
+
+```html
+<div>
+  <input type="checkbox" value="1" checked="checked" name="person[city_ids][]" id="person_cities_1" checked="checked" />
+  <label for="person_cities_1">Pittsburgh</label>
+</div>
+<div>
+  <input type="checkbox" value="2" checked="checked" name="person[city_ids][]" id="person_cities_2" checked="checked" />
+  <label for="person_cities_2">Madison</label>
+</div>
+<div>
+  <input type="checkbox" value="3" checked="checked" name="person[city_ids][]" id="person_cities_3" checked="checked" />
+  <label for="person_cities_3">Santa Rosa</label>
+</div>
+```
+
+The method signature is
+
+```erb
+collection_check_boxes(object, method, collection, value_method, text_method, options = {}, html_options = {}, &block)
+```
+* `object` - the form object, this is unnecessary if using the
+  `form.collection_check_boxes` method call
+* `method` -  the association method for the model relation
+* `collection` - an array of objects to show in checkboxes
+* `value_method` -  the method to call when populating the value attribute in
+  the checkbox
+* `text` - the method to call when populating the text of the label
+
 Uploading Files
 ---------------
 
@@ -629,12 +717,12 @@ A common task is uploading some sort of file, whether it's a picture of a person
 The following two forms both upload a file.
 
 ```erb
-<%= form_with(url: {action: :upload}, multipart: true) do %>
-  <%= file_field_tag 'picture' %>
+<%= form_with model: @person do |form| %>
+  <%= form.file_field :picture %>
 <% end %>
 
-<%= form_with model: @person do |f| %>
-  <%= f.file_field :picture %>
+<%= form_with url: "/uploads", multipart: true do |form| %>
+  <%= form.file_field 'picture' %>
 <% end %>
 ```
 
@@ -661,16 +749,16 @@ Customizing Form Builders
 The object yielded by `form_with` and `fields_for` is an instance of [`ActionView::Helpers::FormBuilder`](https://api.rubyonrails.org/classes/ActionView/Helpers/FormBuilder.html). Form builders encapsulate the notion of displaying form elements for a single object. While you can write helpers for your forms in the usual way, you can also create subclass `ActionView::Helpers::FormBuilder` and add the helpers there. For example:
 
 ```erb
-<%= form_with model: @person do |f| %>
-  <%= text_field_with_label f, :first_name %>
+<%= form_with model: @person do |form| %>
+  <%= text_field_with_label form, :first_name %>
 <% end %>
 ```
 
 can be replaced with
 
 ```erb
-<%= form_with model: @person, builder: LabellingFormBuilder do |f| %>
-  <%= f.text_field :first_name %>
+<%= form_with model: @person, builder: LabellingFormBuilder do |form| %>
+  <%= form.text_field :first_name %>
 <% end %>
 ```
 
@@ -880,10 +968,10 @@ This creates an `addresses_attributes=` method on `Person` that allows you to cr
 The following form allows a user to create a `Person` and its associated addresses.
 
 ```html+erb
-<%= form_with model: @person do |f| %>
+<%= form_with model: @person do |form| %>
   Addresses:
   <ul>
-    <%= f.fields_for :addresses do |addresses_form| %>
+    <%= form.fields_for :addresses do |addresses_form| %>
       <li>
         <%= addresses_form.label :kind %>
         <%= addresses_form.text_field :kind %>
@@ -963,14 +1051,14 @@ end
 ```
 
 If the hash of attributes for an object contains the key `_destroy` with a value that
-evaluates to `true` (eg. 1, '1', true, or 'true') then the object will be destroyed.
+evaluates to `true` (e.g. 1, '1', true, or 'true') then the object will be destroyed.
 This form allows users to remove addresses:
 
 ```erb
-<%= form_with model: @person do |f| %>
+<%= form_with model: @person do |form| %>
   Addresses:
   <ul>
-    <%= f.fields_for :addresses do |addresses_form| %>
+    <%= form.fields_for :addresses do |addresses_form| %>
       <li>
         <%= addresses_form.check_box :_destroy %>
         <%= addresses_form.label :kind %>

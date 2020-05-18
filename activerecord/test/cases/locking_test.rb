@@ -238,14 +238,37 @@ class OptimisticLockingTest < ActiveRecord::TestCase
     end
   end
 
+  def test_update_with_dirty_locking_column
+    person = Person.find(1)
+    person.first_name = "Douglas Adams"
+    person.lock_version = 42
+
+    changes = {
+      "first_name" => ["Michael", "Douglas Adams"],
+      "lock_version" => [0, 42],
+    }
+    assert_equal changes, person.changes
+
+    assert person.save!
+    assert_empty person.changes
+  end
+
   def test_explicit_update_lock_column_raise_error
     person = Person.find(1)
 
+    person2 = Person.find(1)
+    person2.lock_version = 42
+    person2.save!
+
     assert_raises(ActiveRecord::StaleObjectError) do
       person.first_name = "Douglas Adams"
-      person.lock_version = 42
+      person.lock_version = person2.lock_version
 
-      assert_predicate person, :lock_version_changed?
+      changes = {
+        "first_name" => ["Michael", "Douglas Adams"],
+        "lock_version" => [0, 43],
+      }
+      assert_equal changes, person.changes
 
       person.save
     end
@@ -593,7 +616,6 @@ class OptimisticLockingWithSchemaChangeTest < ActiveRecord::TestCase
   end
 
   private
-
     def add_counter_column_to(model, col = "test_count")
       model.connection.add_column model.table_name, col, :integer, null: false, default: 0
       model.reset_column_information

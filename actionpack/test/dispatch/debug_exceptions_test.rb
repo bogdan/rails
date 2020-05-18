@@ -20,6 +20,12 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
   class Boomer
     attr_accessor :closed
 
+    class NilAnnotedSourceCodeError < StandardError
+      def annoted_source_code
+        nil
+      end
+    end
+
     def initialize(detailed = false)
       @detailed = detailed
       @closed = false
@@ -48,10 +54,14 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
       end
     end
 
+    def method_that_raises_nil_annoted_source_code
+      raise NilAnnotedSourceCodeError, "nil annoted_source_code"
+    end
+
     def call(env)
       env["action_dispatch.show_detailed_exceptions"] = @detailed
       req = ActionDispatch::Request.new(env)
-      template = ActionView::Template.new(File.read(__FILE__), __FILE__, ActionView::Template::Handlers::Raw.new, format: :html, locals: [])
+      template = ActionView::Template.new(File.binread(__FILE__), __FILE__, ActionView::Template::Handlers::Raw.new, format: :html, locals: [])
 
       case req.path
       when "/pass"
@@ -106,6 +116,14 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
         raise_nested_exceptions
       when %r{/actionable_error}
         raise CustomActionableError
+      when %r{/nil_annoted_source_code_error}
+        method_that_raises_nil_annoted_source_code
+      when "/utf8_template_error"
+        begin
+          eval "“fancy string”"
+        rescue Exception
+          raise ActionView::Template::Error.new(template)
+        end
       else
         raise "puke!"
       end
@@ -466,6 +484,8 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
   end
 
   test "logs exception backtrace when all lines silenced" do
+    @app = DevelopmentApp
+
     output = StringIO.new
     backtrace_cleaner = ActiveSupport::BacktraceCleaner.new
     backtrace_cleaner.add_silencer { true }
@@ -476,6 +496,29 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
 
     get "/", headers: env
     assert_operator((output.rewind && output.read).lines.count, :>, 10)
+  end
+
+  test "doesn't log the framework backtrace when error type is a routing error" do
+    @app = ProductionApp
+
+    output = StringIO.new
+    backtrace_cleaner = ActiveSupport::BacktraceCleaner.new
+    def backtrace_cleaner.clean(bt, _)
+      []
+    end
+
+    env = { "action_dispatch.show_exceptions"   => true,
+            "action_dispatch.logger"            => Logger.new(output),
+            "action_dispatch.backtrace_cleaner" => backtrace_cleaner }
+
+    assert_raises ActionController::RoutingError do
+      get "/pass", headers: env
+    end
+
+    log = output.rewind && output.read
+
+    assert_includes log, "ActionController::RoutingError (No route matches [GET] \"/pass\")"
+    assert_equal 3, log.lines.count
   end
 
   test "display backtrace when error type is SyntaxError" do
@@ -521,8 +564,8 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
     @app = DevelopmentApp
     Rails.stub :root, Pathname.new(".") do
       cleaner = ActiveSupport::BacktraceCleaner.new.tap do |bc|
-        bc.add_silencer { |line| line =~ /method_that_raises/ }
-        bc.add_silencer { |line| line !~ %r{test/dispatch/debug_exceptions_test.rb} }
+        bc.add_silencer { |line| line.match?(/method_that_raises/) }
+        bc.add_silencer { |line| !line.match?(%r{test/dispatch/debug_exceptions_test.rb}) }
       end
 
       get "/framework_raises", headers: { "action_dispatch.backtrace_cleaner" => cleaner }
@@ -573,7 +616,7 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
     @app = DevelopmentApp
     Rails.stub :root, Pathname.new(".") do
       cleaner = ActiveSupport::BacktraceCleaner.new.tap do |bc|
-        bc.add_silencer { |line| line !~ %r{test/dispatch/debug_exceptions_test.rb} }
+        bc.add_silencer { |line| !line.match?(%r{test/dispatch/debug_exceptions_test.rb}) }
       end
 
       get "/nested_exceptions", headers: { "action_dispatch.backtrace_cleaner" => cleaner }
@@ -608,7 +651,7 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
     @app = DevelopmentApp
     Rails.stub :root, Pathname.new(".") do
       cleaner = ActiveSupport::BacktraceCleaner.new.tap do |bc|
-        bc.add_silencer { |line| line !~ %r{test/dispatch/debug_exceptions_test.rb} }
+        bc.add_silencer { |line| !line.match?(%r{test/dispatch/debug_exceptions_test.rb}) }
       end
 
       get "/actionable_error", headers: { "action_dispatch.backtrace_cleaner" => cleaner }
@@ -638,5 +681,30 @@ class DebugExceptionsTest < ActionDispatch::IntegrationTest
 
     assert_response 400
     assert_match "ActionController::BadRequest", body
+  end
+
+  test "debug exceptions with misbehaving Exception#annoted_source_code" do
+    @app = DevelopmentApp
+
+    io = StringIO.new
+    logger = ActiveSupport::Logger.new(io)
+
+    get "/nil_annoted_source_code_error", headers: { "action_dispatch.show_exceptions" => true, "action_dispatch.logger" => logger }
+
+    assert_select "header h1", /DebugExceptionsTest::Boomer::NilAnnotedSourceCodeError/
+    assert_select "#container h2", /nil annoted_source_code/
+  end
+
+  test "debug exceptions app shows diagnostics for template errors that contain UTF-8 characters" do
+    @app = DevelopmentApp
+
+    io = StringIO.new
+    logger = ActiveSupport::Logger.new(io)
+
+    get "/utf8_template_error", headers: { "action_dispatch.logger" => logger }
+
+    assert_response 500
+    assert_select "#container p", /Showing #{__FILE__} where line #\d+ raised/
+    assert_select "#container code", /undefined local variable or method `string”'/
   end
 end

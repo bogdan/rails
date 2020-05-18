@@ -88,7 +88,7 @@ module ActiveRecord
             affected_rows = self.class._update_record(
               attributes_with_values(attribute_names),
               @primary_key => id_in_database,
-              locking_column => previous_lock_value
+              locking_column => @attributes[locking_column].original_value_for_database
             )
 
             if affected_rows != 1
@@ -156,7 +156,6 @@ module ActiveRecord
           end
 
           private
-
             # We need to apply this decorator here, rather than on module inclusion. The closure
             # created by the matcher would otherwise evaluate for `ActiveRecord::Base`, not the
             # sub class being decorated. As such, changes to `lock_optimistically`, or

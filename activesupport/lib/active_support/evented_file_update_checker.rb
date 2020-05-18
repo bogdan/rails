@@ -3,6 +3,7 @@
 require "set"
 require "pathname"
 require "concurrent/atomic/atomic_boolean"
+require "listen"
 
 module ActiveSupport
   # Allows you to "listen" to changes in a file system.
@@ -55,16 +56,6 @@ module ActiveSupport
       dtw = directories_to_watch
       @dtw, @missing = dtw.partition(&:exist?)
 
-      if @dtw.any?
-        # Loading listen triggers warnings. These are originated by a legit
-        # usage of attr_* macros for private attributes, but adds a lot of noise
-        # to our test suite. Thus, we lazy load it and disable warnings locally.
-        silence_warnings do
-          require "listen"
-        rescue LoadError => e
-          raise LoadError, "Could not load the 'listen' gem. Add `gem 'listen'` to the development group of your Gemfile", e.backtrace
-        end
-      end
       boot!
     end
 
@@ -109,9 +100,7 @@ module ActiveSupport
       def boot!
         normalize_dirs!
 
-        unless @dtw.empty?
-          Listen.to(*@dtw, &method(:changed)).start
-        end
+        Listen.to(*@dtw, &method(:changed)).start if @dtw.any?
       end
 
       def shutdown!
@@ -159,7 +148,7 @@ module ActiveSupport
 
         normalized_gem_paths = Gem.path.map { |path| File.join path, "" }
         dtw = dtw.reject do |path|
-          normalized_gem_paths.any? { |gem_path| path.to_s.start_with?(gem_path) }
+          normalized_gem_paths.any? { |gem_path| path.to_path.start_with?(gem_path) }
         end
 
         @ph.filter_out_descendants(dtw)
@@ -217,7 +206,6 @@ module ActiveSupport
         end
 
         private
-
           def ascendant_of?(base, other)
             base != other && other.ascend do |ascendant|
               break true if base == ascendant

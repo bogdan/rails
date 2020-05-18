@@ -38,7 +38,7 @@ class EagerLoadingTooManyIdsTest < ActiveRecord::TestCase
     assert_equal Citation.count, Citation.preload(:reference_of).to_a.size
   end
 
-  def test_eager_loading_too_may_ids
+  def test_eager_loading_too_many_ids
     assert_equal Citation.count, Citation.eager_load(:citations).offset(0).size
   end
 end
@@ -219,61 +219,6 @@ class EagerAssociationTest < ActiveRecord::TestCase
     comments = Comment.all.merge!(where: "post_id = 1", includes: [post: :author]).to_a
     assert_no_queries do
       comments.each { |comment| comment.post.author.name }
-    end
-  end
-
-  def test_preloading_has_many_in_multiple_queries_with_more_ids_than_database_can_handle
-    assert_called(Comment.connection, :in_clause_length, returns: 5) do
-      posts = Post.all.merge!(includes: :comments).to_a
-      assert_equal 11, posts.size
-    end
-  end
-
-  def test_preloading_has_many_in_one_queries_when_database_has_no_limit_on_ids_it_can_handle
-    assert_called(Comment.connection, :in_clause_length, returns: nil) do
-      posts = Post.all.merge!(includes: :comments).to_a
-      assert_equal 11, posts.size
-    end
-  end
-
-  def test_preloading_habtm_in_multiple_queries_with_more_ids_than_database_can_handle
-    assert_called(Comment.connection, :in_clause_length, times: 2, returns: 5) do
-      posts = Post.all.merge!(includes: :categories).to_a
-      assert_equal 11, posts.size
-    end
-  end
-
-  def test_preloading_habtm_in_one_queries_when_database_has_no_limit_on_ids_it_can_handle
-    assert_called(Comment.connection, :in_clause_length, times: 2, returns: nil) do
-      posts = Post.all.merge!(includes: :categories).to_a
-      assert_equal 11, posts.size
-    end
-  end
-
-  def test_load_associated_records_in_one_query_when_adapter_has_no_limit
-    assert_not_called(Comment.connection, :in_clause_length) do
-      post = posts(:welcome)
-      assert_queries(2) do
-        Post.includes(:comments).where(id: post.id).to_a
-      end
-    end
-  end
-
-  def test_load_associated_records_in_several_queries_when_many_ids_passed
-    assert_called(Comment.connection, :in_clause_length, times: 2, returns: 1) do
-      post1, post2 = posts(:welcome), posts(:thinking)
-      assert_queries(2) do
-        Post.includes(:comments).where(id: [post1.id, post2.id]).to_a
-      end
-    end
-  end
-
-  def test_load_associated_records_in_one_query_when_a_few_ids_passed
-    assert_not_called(Comment.connection, :in_clause_length) do
-      post = posts(:welcome)
-      assert_queries(2) do
-        Post.includes(:comments).where(id: post.id).to_a
-      end
     end
   end
 
@@ -626,6 +571,21 @@ class EagerAssociationTest < ActiveRecord::TestCase
     assert_equal [comments(:does_it_hurt)], assert_no_queries { author.special_post_comments }
   end
 
+  def test_preloading_with_has_one_through_an_sti_with_after_initialize
+    author_a = Author.create!(name: "A")
+    author_b = Author.create!(name: "B")
+    post_a = StiPost.create!(author: author_a, title: "TITLE", body: "BODY")
+    post_b = SpecialPost.create!(author: author_b, title: "TITLE", body: "BODY")
+    comment_a = SpecialComment.create!(post: post_a, body: "TEST")
+    comment_b = SpecialComment.create!(post: post_b, body: "TEST")
+    reset_callbacks(StiPost, :initialize) do
+      StiPost.after_initialize { author }
+      SpecialComment.where(id: [comment_a.id, comment_b.id]).includes(:author).each do |comment|
+        assert comment.author
+      end
+    end
+  end
+
   def test_preloading_has_many_through_with_implicit_source
     authors = Author.includes(:very_special_comments).to_a
     assert_no_queries do
@@ -854,22 +814,31 @@ class EagerAssociationTest < ActiveRecord::TestCase
     e = assert_raise(ActiveRecord::AssociationNotFoundError) {
       Post.all.merge!(includes: :monkeys).find(6)
     }
-    assert_equal("Association named 'monkeys' was not found on Post; perhaps you misspelled it?", e.message)
+    assert_match(/Association named 'monkeys' was not found on Post; perhaps you misspelled it\?/, e.message)
 
     e = assert_raise(ActiveRecord::AssociationNotFoundError) {
       Post.all.merge!(includes: [ :monkeys ]).find(6)
     }
-    assert_equal("Association named 'monkeys' was not found on Post; perhaps you misspelled it?", e.message)
+    assert_match(/Association named 'monkeys' was not found on Post; perhaps you misspelled it\?/, e.message)
 
     e = assert_raise(ActiveRecord::AssociationNotFoundError) {
       Post.all.merge!(includes: [ "monkeys" ]).find(6)
     }
-    assert_equal("Association named 'monkeys' was not found on Post; perhaps you misspelled it?", e.message)
+    assert_match(/Association named 'monkeys' was not found on Post; perhaps you misspelled it\?/, e.message)
 
     e = assert_raise(ActiveRecord::AssociationNotFoundError) {
       Post.all.merge!(includes: [ :monkeys, :elephants ]).find(6)
     }
-    assert_equal("Association named 'monkeys' was not found on Post; perhaps you misspelled it?", e.message)
+    assert_match(/Association named 'monkeys' was not found on Post; perhaps you misspelled it\?/, e.message)
+  end
+
+  if defined?(DidYouMean) && DidYouMean.respond_to?(:correct_error)
+    test "exceptions have suggestions for fix" do
+      error = assert_raise(ActiveRecord::AssociationNotFoundError) {
+        Post.all.merge!(includes: :monkeys).find(6)
+      }
+      assert_match "Did you mean?", error.message
+    end
   end
 
   def test_eager_has_many_through_with_order

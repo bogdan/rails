@@ -68,7 +68,7 @@ module Rails
 
     def version_control
       if !options[:skip_git] && !options[:pretend]
-        run "git init", capture: options[:quiet]
+        run "git init", capture: options[:quiet], abort_on_failure: false
       end
     end
 
@@ -79,7 +79,7 @@ module Rails
     def app
       directory "app"
 
-      keep_file "app/assets/images"
+      empty_directory_with_keep_file "app/assets/images"
 
       keep_file  "app/controllers/concerns"
       keep_file  "app/models/concerns"
@@ -98,6 +98,16 @@ module Rails
       if options[:skip_javascript]
         remove_file "bin/yarn"
       end
+    end
+
+    def yarn_when_updating
+      return if File.exist?("bin/yarn")
+
+      template "bin/yarn" do |content|
+        "#{shebang}\n" + content
+      end
+
+      chmod "bin", 0755 & ~File.umask, verbose: false
     end
 
     def config
@@ -125,6 +135,7 @@ module Rails
       rack_cors_config_exist         = File.exist?("config/initializers/cors.rb")
       assets_config_exist            = File.exist?("config/initializers/assets.rb")
       csp_config_exist               = File.exist?("config/initializers/content_security_policy.rb")
+      feature_policy_config_exist    = File.exist?("config/initializers/feature_policy.rb")
 
       @config_target_version = Rails.application.config.loaded_config_version || "5.0"
 
@@ -157,6 +168,10 @@ module Rails
 
         unless csp_config_exist
           remove_file "config/initializers/content_security_policy.rb"
+        end
+
+        unless feature_policy_config_exist
+          remove_file "config/initializers/feature_policy.rb"
         end
       end
     end
@@ -205,7 +220,6 @@ module Rails
     end
 
     def test
-      empty_directory_with_keep_file "test/fixtures"
       empty_directory_with_keep_file "test/fixtures/files"
       empty_directory_with_keep_file "test/controllers"
       empty_directory_with_keep_file "test/mailers"
@@ -225,6 +239,7 @@ module Rails
 
     def tmp
       empty_directory_with_keep_file "tmp"
+      empty_directory_with_keep_file "tmp/pids"
       empty_directory "tmp/cache"
       empty_directory "tmp/cache/assets"
     end
@@ -309,9 +324,14 @@ module Rails
       end
       remove_task :update_bin_files
 
+      def update_bin_yarn
+        build(:yarn_when_updating)
+      end
+      remove_task :update_bin_yarn
+
       def update_active_storage
         unless skip_active_storage?
-          rails_command "active_storage:update"
+          rails_command "active_storage:update", inline: true
         end
       end
       remove_task :update_active_storage
@@ -340,6 +360,11 @@ module Rails
 
       def create_boot_file
         template "config/boot.rb"
+      end
+
+      def create_boot_with_spring_file
+        return if options[:skip_spring]
+        template "config/boot_with_spring.rb"
       end
 
       def create_active_record_files
@@ -459,6 +484,7 @@ module Rails
         if options[:api]
           remove_file "config/initializers/cookies_serializer.rb"
           remove_file "config/initializers/content_security_policy.rb"
+          remove_file "config/initializers/feature_policy.rb"
         end
       end
 
@@ -470,7 +496,7 @@ module Rails
 
       def delete_new_framework_defaults
         unless options[:update]
-          remove_file "config/initializers/new_framework_defaults_6_0.rb"
+          remove_file "config/initializers/new_framework_defaults_6_1.rb"
         end
       end
 
@@ -483,7 +509,7 @@ module Rails
       end
 
       public_task :apply_rails_template, :run_bundle
-      public_task :generate_bundler_binstub, :generate_spring_binstubs
+      public_task :generate_bundler_binstub, :generate_spring_binstub
       public_task :run_webpack
 
       def run_after_bundle_callbacks
@@ -497,7 +523,6 @@ module Rails
     # :startdoc:
 
     private
-
       # Define file as an alias to create_file for backwards compatibility.
       def file(*args, &block)
         create_file(*args, &block)
@@ -542,7 +567,6 @@ module Rails
       end
 
       private
-
         def handle_version_request!(argument)
           if ["--version", "-v"].include?(argument)
             require "rails/version"

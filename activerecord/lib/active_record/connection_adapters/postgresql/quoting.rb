@@ -30,7 +30,7 @@ module ActiveRecord
         # - "schema.name".table_name
         # - "schema.name"."table.name"
         def quote_table_name(name) # :nodoc:
-          @quoted_table_names[name] ||= Utils.extract_schema_qualified_name(name.to_s).quoted.freeze
+          self.class.quoted_table_names[name] ||= Utils.extract_schema_qualified_name(name.to_s).quoted.freeze
         end
 
         # Quotes schema names for use in SQL queries.
@@ -44,7 +44,7 @@ module ActiveRecord
 
         # Quotes column names for use in SQL queries.
         def quote_column_name(name) # :nodoc:
-          @quoted_column_names[name] ||= PG::Connection.quote_ident(super).freeze
+          self.class.quoted_column_names[name] ||= PG::Connection.quote_ident(super).freeze
         end
 
         # Quote date/time values for use in SQL input.
@@ -67,8 +67,8 @@ module ActiveRecord
           elsif column.type == :uuid && value.is_a?(String) && /\(\)/.match?(value)
             value # Does not quote function default values for UUID columns
           elsif column.respond_to?(:array?)
-            value = type_cast_from_column(column, value)
-            quote(value)
+            type = lookup_cast_type_from_column(column)
+            quote(type.serialize(value))
           else
             super
           end

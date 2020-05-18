@@ -67,11 +67,13 @@ class HasManyThroughAssociationsTest < ActiveRecord::TestCase
   end
 
   def test_preload_with_nested_association
-    posts = Post.preload(:author, :author_favorites_with_scope).to_a
+    posts = Post.where(id: [authors(:david).id, authors(:mary).id]).
+      preload(:author, :author_favorites_with_scope).order(:id).to_a
 
     assert_no_queries do
       posts.each(&:author)
       posts.each(&:author_favorites_with_scope)
+      assert_equal 1, posts[0].author_favorites_with_scope.length
     end
   end
 
@@ -207,7 +209,7 @@ class HasManyThroughAssociationsTest < ActiveRecord::TestCase
     post2 = Post.includes(:categories).first
 
     assert_operator post.categories.length, :>, 0
-    assert_equal post2.categories, post.categories
+    assert_equal post2.categories.sort_by(&:id), post.categories.sort_by(&:id)
   end
 
   def test_include?
@@ -702,8 +704,10 @@ class HasManyThroughAssociationsTest < ActiveRecord::TestCase
 
   def test_through_record_is_built_when_created_with_where
     assert_difference("posts(:thinking).readers.count", 1) do
-      posts(:thinking).people.where(first_name: "Jeb").create
+      posts(:thinking).people.where(readers: { skimmer: true }).create(first_name: "Jeb")
     end
+    reader = posts(:thinking).readers.last
+    assert_equal true, reader.skimmer
   end
 
   def test_associate_with_create_and_no_options
