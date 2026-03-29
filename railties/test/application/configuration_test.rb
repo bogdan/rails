@@ -1655,7 +1655,12 @@ module ApplicationTests
       app "development"
 
       post "/posts.json", '{ "title": "foo", "name": "bar" }', "CONTENT_TYPE" => "application/json"
-      assert_equal "#<ActionController::Parameters #{{ "title" => "foo" }} permitted: false>", last_response.body
+
+      if RUBY_VERSION < "3.4"
+        assert_match('#<ActionController::Parameters {"title"=>"foo"} permitted: false>', last_response.body)
+      else
+        assert_match('#<ActionController::Parameters {"title" => "foo"} permitted: false>', last_response.body)
+      end
     end
 
     test "config.action_controller.permit_all_parameters = true" do
@@ -4947,7 +4952,7 @@ module ApplicationTests
       remove_from_config '.*config\.load_defaults.*\n'
       add_to_config 'config.load_defaults "7.0"'
       app_file "config/initializers/01_configure_database.rb", <<-RUBY
-        ActiveSupport.on_load(:axtive_record) do
+        ActiveSupport.on_load(:active_record) do
           ActiveRecord::Base.connected?
         end
       RUBY

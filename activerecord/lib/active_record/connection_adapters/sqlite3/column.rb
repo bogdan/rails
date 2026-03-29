@@ -47,7 +47,8 @@ module ActiveRecord
           other.is_a?(Column) &&
             super &&
             auto_increment? == other.auto_increment? &&
-            virtual? == other.virtual?
+            rowid == other.rowid &&
+            generated_type == other.generated_type
         end
         alias :eql? :==
 
@@ -57,9 +58,12 @@ module ActiveRecord
             super,
             @auto_increment,
             @rowid,
-            @virtual,
+            @generated_type,
           ].hash
         end
+
+        protected
+          attr_reader :generated_type
       end
     end
   end

@@ -70,7 +70,7 @@ module ActiveRecord
             super &&
             identity? == other.identity? &&
             serial? == other.serial? &&
-            virtual? == other.virtual?
+            generated == other.generated
         end
         alias :eql? :==
 
@@ -80,9 +80,12 @@ module ActiveRecord
             super,
             @identity,
             @serial,
-            @virtual,
+            @generated,
           ].hash
         end
+
+        protected
+          attr_reader :generated
       end
     end
     PostgreSQLColumn = PostgreSQL::Column # :nodoc:
