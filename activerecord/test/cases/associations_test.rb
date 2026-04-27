@@ -59,6 +59,10 @@ class AssociationsTest < ActiveRecord::TestCase
     assert_equal 1, liquids[0].molecules.length
   end
 
+  def test_allocated_record_can_see_assocations
+    assert_not_nil Ship.allocate.association(:parts)
+  end
+
   def test_subselect
     author = authors :david
     favs = author.author_favorites
@@ -151,6 +155,14 @@ class AssociationsTest < ActiveRecord::TestCase
     assert_equal(blog_post, comment.blog_post)
   end
 
+  def test_belongs_to_a_model_with_composite_primary_key_sets_inverse_of
+    order = cpk_orders(:cpk_groceries_order_1)
+    store_id, _order_id = order.id
+    book = order.books.create!(id: [store_id, 4], title: "Book")
+
+    assert_same book.order, book.order.books.first.order
+  end
+
   def test_belongs_to_a_cpk_model_by_id_attribute
     order = cpk_orders(:cpk_groceries_order_1)
     _order_shop_id, order_id = order.id
@@ -166,8 +178,8 @@ class AssociationsTest < ActiveRecord::TestCase
       comment.blog_post
     end.first
 
-    assert_match(/#{Regexp.escape(Sharded::BlogPost.lease_connection.quote_table_name("sharded_blog_posts.blog_id"))} =/, sql)
-    assert_match(/#{Regexp.escape(Sharded::BlogPost.lease_connection.quote_table_name("sharded_blog_posts.id"))} =/, sql)
+    assert_match(/#{Regexp.escape(quote_table_name("sharded_blog_posts.blog_id"))} =/, sql)
+    assert_match(/#{Regexp.escape(quote_table_name("sharded_blog_posts.id"))} =/, sql)
   end
 
   def test_querying_by_whole_associated_records_using_query_constraints
@@ -214,8 +226,8 @@ class AssociationsTest < ActiveRecord::TestCase
       assert_equal(car, review.car)
     end
 
-    assert_match(/#{Regexp.escape(Cpk::Car.lease_connection.quote_table_name("cpk_cars.make"))} =/, sql.first)
-    assert_match(/#{Regexp.escape(Cpk::Car.lease_connection.quote_table_name("cpk_cars.model"))} =/, sql.first)
+    assert_match(/#{Regexp.escape(quote_table_name("cpk_cars.make"))} =/, sql.first)
+    assert_match(/#{Regexp.escape(quote_table_name("cpk_cars.model"))} =/, sql.first)
   end
 
   def test_cpk_model_has_many_records_by_id_attribute
@@ -236,7 +248,7 @@ class AssociationsTest < ActiveRecord::TestCase
       comments = blog_post.comments.to_a
     end.first
 
-    assert_match(/WHERE .*#{Regexp.escape(Sharded::Comment.lease_connection.quote_table_name("sharded_comments.blog_id"))} =/, sql)
+    assert_match(/WHERE .*#{Regexp.escape(quote_table_name("sharded_comments.blog_id"))} =/, sql)
     assert_not_empty(comments)
     assert_equal(expected_comments.sort, comments.sort)
   end
@@ -260,8 +272,8 @@ class AssociationsTest < ActiveRecord::TestCase
       blog_post.comments.to_a
     end.first
 
-    assert_match(/#{Regexp.escape(Sharded::Comment.lease_connection.quote_table_name("sharded_comments.blog_post_id"))} =/, sql)
-    assert_match(/#{Regexp.escape(Sharded::Comment.lease_connection.quote_table_name("sharded_comments.blog_id"))} =/, sql)
+    assert_match(/#{Regexp.escape(quote_table_name("sharded_comments.blog_post_id"))} =/, sql)
+    assert_match(/#{Regexp.escape(quote_table_name("sharded_comments.blog_id"))} =/, sql)
   end
 
   def test_belongs_to_association_does_not_use_parent_query_constraints_if_not_configured_to
@@ -464,21 +476,21 @@ class AssociationsTest < ActiveRecord::TestCase
 
   def test_using_query_constraints_warns_about_changing_behavior
     has_many_expected_message = <<~MSG.squish
-      Setting `query_constraints:` option on `Sharded::BlogPost.has_many :qc_deprecated_comments` is deprecated.
-      To maintain current behavior, use the `foreign_key` option instead.
+      Setting `query_constraints:` option on `Sharded::BlogPost.has_many :qc_deprecated_comments` is not allowed.
+      To get the same behavior, use the `foreign_key` option instead.
     MSG
 
-    assert_deprecated(has_many_expected_message, ActiveRecord.deprecator) do
+    assert_raises(ActiveRecord::ConfigurationError, match: has_many_expected_message) do
       Sharded::BlogPost.has_many :qc_deprecated_comments,
         class_name: "Sharded::Comment", query_constraints: [:blog_id, :blog_post_id]
     end
 
     belongs_to_expected_message = <<~MSG.squish
-      Setting `query_constraints:` option on `Sharded::Comment.belongs_to :qc_deprecated_blog_post` is deprecated.
-      To maintain current behavior, use the `foreign_key` option instead.
+      Setting `query_constraints:` option on `Sharded::Comment.belongs_to :qc_deprecated_blog_post` is not allowed.
+      To get the same behavior, use the `foreign_key` option instead.
     MSG
 
-    assert_deprecated(belongs_to_expected_message, ActiveRecord.deprecator) do
+    assert_raises(ActiveRecord::ConfigurationError, match: belongs_to_expected_message) do
       Sharded::Comment.belongs_to :qc_deprecated_blog_post,
         class_name: "Sharded::Blog", query_constraints: [:blog_id, :blog_post_id]
     end
@@ -802,7 +814,7 @@ end
 class PreloaderTest < ActiveRecord::TestCase
   fixtures :posts, :comments, :books, :authors, :tags, :taggings, :essays, :categories, :author_addresses,
            :sharded_blog_posts, :sharded_comments, :sharded_blog_posts_tags, :sharded_tags,
-           :members, :member_details, :organizations, :cpk_orders, :cpk_order_agreements,
+           :members, :member_details, :organizations, :cpk_authors, :cpk_orders, :cpk_books, :cpk_order_agreements,
            :dogs, :other_dogs
 
   def test_preload_with_scope
@@ -1425,6 +1437,20 @@ class PreloaderTest < ActiveRecord::TestCase
     end
   end
 
+  def test_preload_with_unpersisted_records_with_composite_foreign_key_no_ops
+    order = Cpk::Order.new
+    new_book_with_order = Cpk::Book.new(order: order)
+    new_book_without_order = Cpk::Book.new
+    books = [new_book_with_order, new_book_without_order]
+
+    assert_no_queries do
+      ActiveRecord::Associations::Preloader.new(records: books, associations: :order).call
+
+      assert_same order, new_book_with_order.order
+      assert_nil new_book_without_order.order
+    end
+  end
+
   def test_preload_wont_set_the_wrong_target
     post = posts(:welcome)
     post.update!(author_id: 54321)
@@ -1505,10 +1531,8 @@ class PreloaderTest < ActiveRecord::TestCase
     assert_equal 2, sql.size
     preload_sql = sql.last
 
-    c = Cpk::OrderAgreement.lease_connection
-    order_id_column = Regexp.escape(c.quote_table_name("cpk_order_agreements.order_id"))
-    order_id_constraint = /#{order_id_column} = (\?|(\d+)|\$\d)$/
-    expectation = /SELECT.*WHERE.* #{order_id_constraint}/
+    order_id_column = Regexp.escape(quote_table_name("cpk_order_agreements.order_id"))
+    expectation = /SELECT.*WHERE.* #{order_id_column} = (\?|(\d+)|\$\d)$/
 
     assert_match(expectation, preload_sql)
     assert_equal order_agreements.sort, loaded_order.order_agreements.sort
@@ -1527,10 +1551,8 @@ class PreloaderTest < ActiveRecord::TestCase
     assert_equal 2, sql.size
     preload_sql = sql.last
 
-    c = Cpk::Order.lease_connection
-    order_id = Regexp.escape(c.quote_table_name("cpk_orders.id"))
-    order_constraint = /#{order_id} = (\?|(\d+)|\$\d)$/
-    expectation = /SELECT.*WHERE.* #{order_constraint}/
+    order_id = Regexp.escape(quote_table_name("cpk_orders.id"))
+    expectation = /SELECT.*WHERE.* #{order_id} = (\?|(\d+)|\$\d)$/
 
     assert_match(expectation, preload_sql)
     assert_equal order, loaded_order_agreement.order
@@ -1544,6 +1566,17 @@ class PreloaderTest < ActiveRecord::TestCase
       ActiveRecord::Associations::Preloader.new(records: [post], associations: :comments).call
 
       assert_equal [comment], post.comments.to_a
+    end
+  end
+
+  def test_preload_keeps_built_has_many_records_with_composite_key_no_ops
+    order = Cpk::Order.new
+    book = order.books.build
+
+    assert_no_queries do
+      ActiveRecord::Associations::Preloader.new(records: [order], associations: :books).call
+
+      assert_equal [book], order.books.to_a
     end
   end
 
@@ -1579,6 +1612,17 @@ class PreloaderTest < ActiveRecord::TestCase
 
       assert_same author, post.author
     end
+  end
+
+  def test_preload_group_with_klass
+    published_author = PublishedAuthor.create!(name: "PublishedAuthor")
+    PublishedBook.create!(name: "PublishedBook", author_id: published_author.id, isbn: "12345")
+
+    author = Author.create!(name: "Author", published_author_id: published_author.id)
+    Book.create!(name: "Book", author_id: author.id, isbn: "67890")
+
+    result = Author.includes(books: [], published_author: { books: [] }).last
+    assert_equal [PublishedBook], result.published_author.books.map(&:class)
   end
 end
 

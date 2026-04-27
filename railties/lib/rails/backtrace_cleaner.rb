@@ -5,7 +5,6 @@ require "active_support/core_ext/string/access"
 
 module Rails
   class BacktraceCleaner < ActiveSupport::BacktraceCleaner # :nodoc:
-    APP_DIRS_PATTERN = /\A(?:\.\/)?(?:app|config|lib|test|\(\w*\))/
     RENDER_TEMPLATE_PATTERN = /:in [`'].*_\w+_{2,3}\d+_\d+'/
 
     def initialize
@@ -23,18 +22,21 @@ module Rails
           line
         end
       end
-      add_silencer { |line| !APP_DIRS_PATTERN.match?(line) }
+
+      add_silencer do |line|
+        line.start_with?(File::SEPARATOR, "vendor/", "bin/")
+      end
     end
 
     def clean(backtrace, kind = :silent)
-      kind = nil if ENV["BACKTRACE"]
+      return backtrace if ENV["BACKTRACE"]
 
       super(backtrace, kind)
     end
     alias_method :filter, :clean
 
     def clean_frame(frame, kind = :silent)
-      kind = nil if ENV["BACKTRACE"]
+      return frame if ENV["BACKTRACE"]
 
       super(frame, kind)
     end

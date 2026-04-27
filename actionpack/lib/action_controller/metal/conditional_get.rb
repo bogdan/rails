@@ -318,7 +318,7 @@ module ActionController
     # *   `public`: By default, HTTP responses are private, cached only on the
     #     user's web browser. To allow proxies to cache the response, set `true` to
     #     indicate that they can serve the cached response to all users.
-    def http_cache_forever(public: false)
+    def http_cache_forever(public: false, &block)
       expires_in 100.years, public: public, immutable: true
 
       yield if stale?(etag: request.fullpath,
@@ -330,6 +330,31 @@ module ActionController
     # may not be stored in any cache.
     def no_store
       response.cache_control.replace(no_store: true)
+    end
+
+    # Adds the `must-understand` directive to the `Cache-Control` header, which indicates
+    # that a cache MUST understand the semantics of the response status code that has been
+    # received, or discard the response.
+    #
+    # This is particularly useful when returning responses with new or uncommon
+    # status codes that might not be properly interpreted by older caches.
+    #
+    # #### Example
+    #
+    #     def show
+    #       @article = Article.find(params[:id])
+    #
+    #       if @article.early_access?
+    #         must_understand
+    #         render status: 203 # Non-Authoritative Information
+    #       else
+    #         fresh_when @article
+    #       end
+    #     end
+    #
+    def must_understand
+      response.cache_control[:must_understand] = true
+      response.cache_control[:no_store] = true
     end
 
     private

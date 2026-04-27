@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "rails"
 require "global_id/railtie"
 require "active_job"
 
@@ -10,6 +11,8 @@ module ActiveJob
     config.active_job.custom_serializers = []
     config.active_job.log_query_tags_around_perform = true
 
+    guard_load_hooks(:active_job, :active_job_arguments, :active_job_continuable, :active_job_test_case)
+
     initializer "active_job.deprecator", before: :load_environment_config do |app|
       app.deprecators[:active_job] = ActiveJob.deprecator
     end
@@ -19,7 +22,7 @@ module ActiveJob
     end
 
     initializer "active_job.custom_serializers" do |app|
-      config.after_initialize do
+      ActiveSupport.on_load(:active_job_arguments) do
         custom_serializers = app.config.active_job.custom_serializers
         ActiveJob::Serializers.add_serializers custom_serializers
       end
@@ -31,8 +34,17 @@ module ActiveJob
           ActiveJob::Base.include EnqueueAfterTransactionCommit
 
           if app.config.active_job.key?(:enqueue_after_transaction_commit)
-            ActiveJob::Base.enqueue_after_transaction_commit = app.config.active_job.delete(:enqueue_after_transaction_commit)
+            ActiveJob::Base.enqueue_after_transaction_commit =
+              app.config.active_job.enqueue_after_transaction_commit
           end
+        end
+      end
+    end
+
+    initializer "active_job.action_controller_parameters" do |app|
+      ActiveSupport.on_load(:active_job) do
+        ActiveSupport.on_load(:action_controller) do
+          ActiveJob::Serializers.add_serializers ActiveJob::Serializers::ActionControllerParametersSerializer
         end
       end
     end
@@ -54,7 +66,9 @@ module ActiveJob
         # Configs used in other initializers
         options = options.except(
           :log_query_tags_around_perform,
-          :custom_serializers
+          :custom_serializers,
+          # This config can't be applied globally, so we need to remove otherwise it will be applied to `ActiveJob::Base`.
+          :enqueue_after_transaction_commit
         )
 
         options.each do |k, v|

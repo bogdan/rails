@@ -42,19 +42,19 @@ class DefaultNumbersTest < ActiveRecord::TestCase
   def test_default_positive_integer
     record = DefaultNumber.new
     assert_equal 7, record.positive_integer
-    assert_equal "7", record.positive_integer_before_type_cast
+    assert_equal 7, record.positive_integer_before_type_cast
   end
 
   def test_default_negative_integer
     record = DefaultNumber.new
     assert_equal (-5), record.negative_integer
-    assert_equal "-5", record.negative_integer_before_type_cast
+    assert_equal (-5), record.negative_integer_before_type_cast
   end
 
   def test_default_decimal_number
     record = DefaultNumber.new
     assert_equal BigDecimal("2.78"), record.decimal_number
-    assert_equal "2.78", record.decimal_number_before_type_cast
+    assert_equal BigDecimal("2.78"), record.decimal_number_before_type_cast
   end
 end
 
@@ -234,8 +234,10 @@ class DefaultsTestWithoutTransactionalFixtures < ActiveRecord::TestCase
     def using_strict(strict)
       db_config = ActiveRecord::Base.connection_pool.db_config
       conn_hash = db_config.configuration_hash
-      ActiveRecord::Base.establish_connection conn_hash.merge(strict: strict)
-      yield
+      ActiveRecord.deprecator.silence do
+        ActiveRecord::Base.establish_connection conn_hash.merge(strict: strict)
+        yield
+      end
     ensure
       ActiveRecord::Base.establish_connection db_config
     end

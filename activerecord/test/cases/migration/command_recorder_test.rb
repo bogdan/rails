@@ -300,6 +300,11 @@ module ActiveRecord
         assert_equal [:rename_column, [:table, :new, :old]], rename
       end
 
+      def test_invert_rename_column_with_options
+        rename = @recorder.inverse_of :rename_column, [:table, :old, :new, { algorithm: :inplace, lock: :none }]
+        assert_equal [:rename_column, [:table, :new, :old, { algorithm: :inplace, lock: :none }]], rename
+      end
+
       def test_invert_add_index
         remove = @recorder.inverse_of :add_index, [:table, [:one, :two]]
         assert_equal [:remove_index, [:table, [:one, :two]], nil], remove
@@ -313,6 +318,28 @@ module ActiveRecord
       def test_invert_add_index_with_algorithm_option
         remove = @recorder.inverse_of :add_index, [:table, :one, algorithm: :concurrently]
         assert_equal [:remove_index, [:table, :one, algorithm: :concurrently], nil], remove
+      end
+
+      if ActiveRecord::Base.lease_connection.supports_disabling_indexes?
+        def test_invert_add_index_with_disabled_option
+          remove = @recorder.inverse_of :add_index, [:table, :one, enabled: false]
+          assert_equal [:remove_index, [:table, :one, enabled: false], nil], remove
+        end
+
+        def test_invert_remove_index_with_disabled_option
+          add = @recorder.inverse_of :remove_index, [:table, :one, enabled: false]
+          assert_equal [:add_index, [:table, :one, enabled: false]], add
+        end
+
+        def test_invert_disable_index
+          enable = @recorder.inverse_of :disable_index, [:table, :disabled_index]
+          assert_equal [:enable_index, [:table, :disabled_index]], enable
+        end
+
+        def test_invert_enable_index
+          disable = @recorder.inverse_of :enable_index, [:table, :enabled_index]
+          assert_equal [:disable_index, [:table, :enabled_index]], disable
+        end
       end
 
       def test_invert_remove_index
@@ -552,14 +579,13 @@ module ActiveRecord
       end
 
       def test_invert_rename_enum
-        enum = @recorder.inverse_of :rename_enum, [:dog_breed, to: :breed]
-        assert_equal [:rename_enum, [:breed, to: :dog_breed]], enum
+        enum = @recorder.inverse_of :rename_enum, [:dog_breed, :breed]
+        assert_equal [:rename_enum, [:breed, :dog_breed]], enum
       end
 
-      def test_invert_rename_enum_without_to
-        assert_raises(ActiveRecord::IrreversibleMigration) do
-          @recorder.inverse_of :rename_enum, [:breed]
-        end
+      def test_invert_rename_enum_with_to_option
+        enum = @recorder.inverse_of :rename_enum, [:dog_breed, to: :breed]
+        assert_equal [:rename_enum, [:breed, :dog_breed]], enum
       end
 
       def test_invert_add_enum_value

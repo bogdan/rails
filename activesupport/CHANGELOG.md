@@ -1,107 +1,189 @@
-*   Fix `ActiveSupport::HashWithIndifferentAccess#stringify_keys` to stringify all keys not just symbols.
+*   Add `prepend: true` option to `ActiveSupport::Notifications.subscribe`.
 
-    Previously:
+      When `prepend: true` is passed, the subscriber is added to the front of
+      the subscriber list for the given event, ensuring it runs before any
+      previously registered subscribers. This allows mutating the event payload
+      before other subscribers process it.
+
+      ```ruby
+      ActiveSupport::Notifications.subscribe("sql.active_record", prepend: true) do |event|
+        event.payload[:name] = "[IDC] #{event.payload[:name]}"
+      end
+      ```
+
+      *Jean Boussier*, *Federico Carrocera*
+
+*   Deprecate `require_dependency`.
+
+    `require_dependency` is deprecated without replacement and will be removed in Rails 9.
+
+    - Recommendations for applications:
+
+        - If the call is an old one written in the days of the classic
+          autoloader to ensure a certain constant is loaded for constant lookup
+          to work as expected, you can simply remove it.
+
+        - In order to preload classes when the application boots, which may be
+          necessary for things like STIs or Kafka consumers, please check the
+          autoloading guide for modern approaches.
+
+    - Recommendations for engines that depend on Rails >= 7.0:
+
+      Same recommendations as for applications, since the classic autoloader is
+      no longer available starting with Rails 7.0.
+
+    - Recommendations for engines that support Rails < 7.0:
+
+      Guard the call with a version check just in case the parent application is
+      using the classic autoloader:
+
+      ```ruby
+      require_dependency "some_file" if Rails::VERSION::MAJOR < 7
+      ```
+
+    *Xavier Noria*
+
+*   Add `group` method to `ActiveSupport::ContinuousIntegration` for parallel step execution.
+
+    Groups collect steps and run them concurrently using a thread pool, reducing CI times
+    by running independent checks in parallel. Sub-groups run sequentially within a single
+    parallel slot allowing dependent steps to be grouped together.
 
     ```ruby
-    { 1 => 2 }.with_indifferent_access.stringify_keys[1] # => 2
-    ```
+    CI.run do
+      step "Setup", "bin/setup --skip-server"
 
-    After this change:
+      group "Checks", parallel: 2 do
+        step "Style: Ruby", "bin/rubocop"
+        step "Security: Brakeman", "bin/brakeman --quiet"
+        step "Security: Gem audit", "bin/bundler-audit"
 
-    ```ruby
-    { 1 => 2 }.with_indifferent_access.stringify_keys["1"] # => 2
-    ```
-
-    This change can be seen as a bug fix, but since it behaved like this for a very long time, we're deciding
-    to not backport the fix and to make the change in a major release.
-
-    *Jean Boussier*
-
-## Rails 8.0.0.beta1 (September 26, 2024) ##
-
-*   Include options when instrumenting `ActiveSupport::Cache::Store#delete` and `ActiveSupport::Cache::Store#delete_multi`.
-
-    *Adam Renberg Tamm*
-
-*   Print test names when running `rails test -v` for parallel tests.
-
-    *John Hawthorn*, *Abeid Ahmed*
-
-*   Deprecate `Benchmark.ms` core extension.
-
-    The `benchmark` gem will become bundled in Ruby 3.5
-
-    *Earlopain*
-
-*   `ActiveSupport::TimeWithZone#inspect` now uses ISO 8601 style time like `Time#inspect`
-
-    *John Hawthorn*
-
-*   `ActiveSupport::ErrorReporter#report` now assigns a backtrace to unraised exceptions.
-
-    Previously reporting an un-raised exception would result in an error report without
-    a backtrace. Now it automatically generates one.
-
-    *Jean Boussier*
-
-*   Add `escape_html_entities` option to `ActiveSupport::JSON.encode`.
-
-    This allows for overriding the global configuration found at
-    `ActiveSupport.escape_html_entities_in_json` for specific calls to `to_json`.
-
-    This should be usable from controllers in the following manner:
-    ```ruby
-    class MyController < ApplicationController
-      def index
-        render json: { hello: "world" }, escape_html_entities: false
+        group "Tests" do
+          step "Tests: Rails", "bin/rails test"
+          step "Tests: Seeds", "env RAILS_ENV=test bin/rails db:seed:replant"
+        end
       end
     end
     ```
 
-    *Nigel Baillie*
+    *Donal McBreen*
 
-*   Raise when using key which can't respond to `#to_sym` in `EncryptedConfiguration`.
+*   Introduce `this_week?`, `this_month?`, and `this_year?` methods to Date/Time
 
-    As is the case when trying to use an Integer or Float as a key, which is unsupported.
+    Similar to `today?`, `tomorrow?`, and `yesterday?`, these methods are useful to
+    query time instances against the current period.
 
-    *zzak*
+    ```ruby
+    unless post.created_at.this_week?
+      link_to "See week recap", week_recap_path(date)
+    end
+    ```
 
-*   Deprecate addition and since between two `Time` and `ActiveSupport::TimeWithZone`.
+    *Matheus Richard*
 
-    Previously adding time instances together such as `10.days.ago + 10.days.ago` or `10.days.ago.since(10.days.ago)` produced a nonsensical future date. This behavior is deprecated and will be removed in Rails 8.1.
+*   Removed the deprecated `ActiveSupport::Multibyte::Chars` class.
 
-    *Nick Schwaderer*
+    As well as `String#mb_chars`
 
-*   Support rfc2822 format for Time#to_fs & Date#to_fs.
+    *Jean Boussier*
 
-    *Akshay Birajdar*
+*   Changed `ActiveSupport::EventReporter#subscribe` to only provide the event name during filtering.
 
-*   Optimize load time for `Railtie#initialize_i18n`. Filter `I18n.load_path`s passed to the file watcher to only those
-    under `Rails.root`. Previously the watcher would grab all available locales, including those in gems
-    which do not require a watcher because they won't change.
+    Otherwise the event reporter would need to always build the expensive payload even when there is
+    no active subscriber, which is very wasteful.
 
-    *Nick Schwaderer*
+    *Jean Boussier*
 
-*   Add a `filter` option to `in_order_of` to prioritize certain values in the sorting without filtering the results
-    by these values.
+*   Fix inflections to better handle overlapping acronyms.
 
-    *Igor Depolli*
+    ```ruby
+    ActiveSupport::Inflector.inflections(:en) do |inflect|
+      inflect.acronym "USD"
+      inflect.acronym "USDC"
+    end
 
-*   Improve error message when using `assert_difference` or `assert_changes` with a
-    proc by printing the proc's source code (MRI only).
+    "USDC".underscore # => "usdc"
+    ```
 
-    *Richard Böhme*, *Jean Boussier*
+    *Said Kaldybaev*
 
-*   Add a new configuration value `:zone` for `ActiveSupport.to_time_preserves_timezone` and rename the previous `true` value to `:offset`. The new default value is `:zone`.
+*   Add `ActiveSupport::CombinedConfiguration` to offer interchangeable access to configuration provided by
+    either ENV or encrypted credentials. Used by Rails to first look at ENV, then look in encrypted credentials,
+    but can be configured separately with any number of API-compatible backends in a first-look order.
 
-    *Jason Kim*, *John Hawthorn*
+    The object is inspect safe and will only show keys, not values.
 
-*   Align instrumentation `payload[:key]` in ActiveSupport::Cache to follow the same pattern, with namespaced and normalized keys.
+    *DHH*, *Emmanuel Hayford*
 
-    *Frederik Erbs Spang Thomsen*
+*   Add `ActiveSupport::EnvConfiguration` to provide access to ENV variables in a way that's compatible with
+    `ActiveSupport::EncryptedConfiguration` and therefore can be used by `ActiveSupport::CombinedConfiguration`.
 
-*   Fix `travel_to` to set usec 0 when `with_usec` is `false` and the given argument String or DateTime.
+    The object is inspect safe and will only show keys, not values.
 
-    *mopp*
+    Examples:
 
-Please check [7-2-stable](https://github.com/rails/rails/blob/7-2-stable/activesupport/CHANGELOG.md) for previous changes.
+    ```ruby
+    conf = ActiveSupport::EnvConfiguration.new
+    conf.require(:db_host) # ENV.fetch("DB_HOST")
+    conf.require(:aws, :access_key_id) # ENV.fetch("AWS__ACCESS_KEY_ID")
+    conf.option(:cache_host) # ENV["CACHE_HOST"]
+    conf.option(:cache_host, default: "cache-host-1") # ENV["CACHE_HOST"] || "cache-host-1"
+    conf.option(:cache_host, default: -> { "cache-host-1" }) # ENV["CACHE_HOST"] || "cache-host-1"
+    ```
+
+    *DHH*, *Emmanuel Hayford*
+
+*   Make flaky parallel tests easier to diagnose by deterministically assigning
+    tests to workers.
+
+    Rails assigns tests to workers in round-robin order so the same `--seed`
+    and worker count will result in the same sequence of tests running on each
+    worker (whether processes or threads) increasing the odds of reproducing
+    test failures caused by test interdependence.
+
+    This can make test runtime slower and spikier when one worker gets most of
+    the slow tests. Enable `work_stealing: true` to allow idle workers to steal
+    tests from busy workers in deterministic order, smoothing out runtime at the
+    cost of less reproducible flaky-test failures.
+
+    *Jeremy Daer*
+
+*   Make `ActiveSupport::EventReporter#debug_mode?` true by default to emit debug events
+    outside of Rails application contexts.
+
+    *Gannon McGibbon*
+
+*   Add `SecureRandom.base32` for generating case-insensitive keys that are unambiguous to humans.
+
+    *Stanko Krtalic Rusendic & Miha Rekar*
+
+*   Add a fast failure mode to `ActiveSupport::ContinuousIntegration` that stops the rest of
+    the run after a step fails. Invoke by running `bin/ci --fail-fast` or `bin/ci -f`.
+
+    *Dennis Paagman*
+
+*   Implement LocalCache strategy on `ActiveSupport::Cache::MemoryStore`. The memory store
+    needs to respond to the same interface as other cache stores (e.g. `ActiveSupport::NullStore`).
+
+    *Mikey Gough*
+
+*   Add a detailed failure summary to `ActiveSupport::ContinuousIntegration`.
+
+    *Mike Dalessio*
+
+*   Introduce `ActiveSupport::EventReporter::LogSubscriber` structured event logging.
+
+    ```ruby
+    class MyLogSubscriber < ActiveSupport::EventReporter::LogSubscriber
+      self.namespace = "test"
+
+      def something(event)
+        info { "Event #{event[:name]} emitted." }
+      end
+    end
+    ```
+
+    *Gannon McGibbon*
+
+
+Please check [8-1-stable](https://github.com/rails/rails/blob/8-1-stable/activesupport/CHANGELOG.md) for previous changes.

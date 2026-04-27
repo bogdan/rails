@@ -1,139 +1,320 @@
-*   Raise an `ArgumentError` when invalid `:on` or `:except` options are passed into `#resource` and `#resources`.
+*   Serve static CSS and HTML files with `charset=utf-8` in the Content-Type header.
 
-    *Joshua Young*
+    Static CSS and HTML files served by `ActionDispatch::Static` now include
+    `; charset=utf-8` in their Content-Type response header, fixing browser
+    encoding issues with CSS files containing non-ASCII characters.
 
-## Rails 8.0.0.beta1 (September 26, 2024) ##
+    *Mike Dalessio*
 
-*   Fix non-GET requests not updating cookies in `ActionController::TestCase`.
+*   Add `query:` and `body:` kwargs to integration test request helpers.
 
-    *Jon Moss*, *Hartley McGuire*
+    `params:` was ambiguous for GET requests with `as: :json` — unclear
+    whether params should go in the query string or request body. This
+    caused failures in API-only apps which exclude `Rack::MethodOverride`.
 
-*   Update `ActionController::Live` to use a thread-pool to reuse threads across requests.
+    Use `query:` to explicitly send params in the URL query string (any
+    HTTP method), and `body:` to send an encoded request body. They can
+    be combined.
 
-    *Adam Renberg Tamm*
+    `params:` retains existing behavior: GET → query string,
+    other methods → request body.
 
-*   Introduce safer, more explicit params handling method with `params#expect` such that
-    `params.expect(table: [ :attr ])` replaces `params.require(:table).permit(:attr)`
+        get  "/search", query: { q: "rails" }, as: :json
+        post "/search", query: { page: 1 }, body: { filters: {} }, as: :json
 
-    Ensures params are filtered with consideration for the expected
-    types of values, improving handling of params and avoiding ignorable
-    errors caused by params tampering.
+    Fixes #57131.
 
-    ```ruby
-    # If the url is altered to ?person=hacked
-    # Before
-    params.require(:person).permit(:name, :age, pets: [:name])
-    # raises NoMethodError, causing a 500 and potential error reporting
+    *Denis Savchuk*
 
-    # After
-    params.expect(person: [ :name, :age, pets: [[:name]] ])
-    # raises ActionController::ParameterMissing, correctly returning a 400 error
-    ```
+*   Add `ActionDispatch::Request#safe_method?` and `#unsafe_method?`.
 
-    You may also notice the new double array `[[:name]]`. In order to
-    declare when a param is expected to be an array of parameter hashes,
-    this new double array syntax is used to explicitly declare an array.
-    `expect` requires you to declare expected arrays in this way, and will
-    ignore arrays that are passed when, for example, `pet: [:name]` is used.
-
-    In order to preserve compatibility, `permit` does not adopt the new
-    double array syntax and is therefore more permissive about unexpected
-    types. Using `expect` everywhere is recommended.
-
-    We suggest replacing `params.require(:person).permit(:name, :age)`
-    with the direct replacement `params.expect(person: [:name, :age])`
-    to prevent external users from manipulating params to trigger 500
-    errors. A 400 error will be returned instead, using public/400.html
-
-    Usage of `params.require(:id)` should likewise be replaced with
-    `params.expect(:id)` which is designed to ensure that `params[:id]`
-    is a scalar and not an array or hash, also requiring the param.
+    `safe_method?` returns true for HTTP methods that are defined as safe per
+    [RFC 9110 §9.2.1](https://httpwg.org/specs/rfc9110.html#safe.methods):
+    GET, HEAD, OPTIONS, and TRACE. `unsafe_method?` is the inverse.
 
     ```ruby
-    # Before
-    User.find(params.require(:id)) # allows an array, altering behavior
-
-    # After
-    User.find(params.expect(:id)) # expect only returns non-blank permitted scalars (excludes Hash, Array, nil, "", etc)
+    request.safe_method?   # => true for GET, HEAD, OPTIONS, TRACE
+    request.unsafe_method? # => true for POST, PUT, PATCH, DELETE
     ```
 
-    *Martin Emde*
+    *Joseph Hale*
 
-*   System Testing: Disable Chrome's search engine choice by default in system tests.
+*   Add `content_type` option to HTTP authentication methods.
 
-    *glaszig*
+    `request_http_basic_authentication`, `request_http_digest_authentication`,
+    and `request_http_token_authentication` now accept a `content_type`
+    parameter to control the Content-Type of the 401 response. The default
+    behavior is unchanged.
 
-*   Fix `Request#raw_post` raising `NoMethodError` when `rack.input` is `nil`.
+    ```ruby
+    http_basic_authenticate_with(
+      name: "admin", password: "secret",
+      message: '{"error":"Access denied"}',
+      content_type: "application/json"
+    )
+    ```
 
-    *Hartley McGuire*
+    *Iliana Hadzhiatanasova*
 
-*   Remove `racc` dependency by manually writing `ActionDispatch::Journey::Scanner`.
+*   Add `RAILS_HOST_APP_PATH` environment variable to support editor links in devcontainer/Docker environments.
+
+    When Rails runs inside a container, file paths in error pages are container-internal paths
+    that don't exist on the host machine. Setting `RAILS_HOST_APP_PATH` to the host's application
+    path enables proper translation of container paths to host paths for editor links.
+
+    Example in `.devcontainer/devcontainer.json`:
+
+    ```json
+    {
+      "containerEnv": {
+        "EDITOR": "code",
+        "RAILS_HOST_APP_PATH": "${localWorkspaceFolder}"
+      }
+    }
+    ```
+
+    This allows the "open in editor" feature to work correctly when developing in containers.
+
+    *Victor Cobos*
+
+*   Make `event_backtrace` attribute in `rescue_from_handled.action_controller` notifications the full backtrace, when `config.action_controller.rescue_from_event_backtrace` is `:array`.
+
+    This also affects `action_controller.rescue_from_handled` events.
+
+    *zzak*
+
+*   Avoid loading `ActionController::Live` early in initializer, and introduce
+    `action_controller_live` load hook.
+
+    *Adrianna Chang*
+
+*   Make CSRF header-only protection compatible with local installs using HTTP
+
+    In local installations that don't use HTTPS and where the app is
+    accessed within a local network, requests won't be performed from a
+    secure context. In this case, the browser won't send the
+    `Sec-Fetch-Site` header. This means non-GET requests will be rejected
+    because CSRF protection will fail when using the header-only approach.
+
+    With this change, we allow these requests with missing `Sec-Fetch-Site`
+    headers if:
+
+    - They happen over HTTP
+    - The app is not configured to force SSL
+
+    The `Origin` check always happens in any case.
+
+    *Rosa Gutierrez*
+
+*   Deprecate calling `protect_from_forgery` without specifying a strategy.
+
+    When `protect_from_forgery` is called without the `:with` option, it currently defaults to
+    `:null_session`. This is inconsistent with `config.action_controller.default_protect_from_forgery`,
+    which uses `:exception`.
+
+    A new configuration option `config.action_controller.default_protect_from_forgery_with` has been
+    added to allow applications to configure the default strategy. It currently defaults to `:null_session`
+    for backwards compatibility, but will change to `:exception` in a future version of Rails.
+
+    Applications can opt into the new behavior now by setting:
+
+    ```ruby
+    config.action_controller.default_protect_from_forgery_with = :exception
+    ```
+
+    To silence the deprecation warning without changing behavior, explicitly pass the strategy:
+
+    ```ruby
+    protect_from_forgery with: :null_session
+    ```
+
+    *Said Kaldybaev*
+
+*   Add `ActionDispatch::Request#bearer_token` to extract the bearer token from the Authorization header.
+    Bearer tokens are commonly used for API and MCP requests.
+
+    *DHH*
+
+*   Add block support to `ActionController::Parameters#merge`
+
+    `ActionController::Parameters#merge` now accepts a block to resolve conflicts,
+    consistent with `Hash#merge` and `Parameters#merge!`.
+
+    ```ruby
+    params1 = ActionController::Parameters.new(a: 1, b: 2)
+    params2 = ActionController::Parameters.new(b: 3, c: 4)
+    params1.merge(params2) { |key, old_val, new_val| old_val + new_val }
+    # => #<ActionController::Parameters {"a"=>1, "b"=>5, "c"=>4} permitted: false>
+    ```
+
+    *Said Kaldybaev*
+
+*   Yield key to `ActionController::Parameters#fetch` block
+
+    ```ruby
+    key = params.fetch(:missing) { |missing_key| missing_key }
+    key # => :missing
+
+    key = params.fetch("missing") { |missing_key| missing_key }
+    key # => "missing"
+    ```
+
+    *Sean Doyle*
+
+*   Add `config.action_controller.live_streaming_excluded_keys` to control execution state sharing in ActionController::Live.
+
+    When using ActionController::Live, actions are executed in a separate thread that shares
+    state from the parent thread. This new configuration allows applications to opt-out specific
+    state keys that should not be shared.
+
+    This is useful when streaming inside a `connected_to` block, where you may want
+    the streaming thread to use its own database connection context.
+
+    ```ruby
+    # config/application.rb
+    config.action_controller.live_streaming_excluded_keys = [:active_record_connected_to_stack]
+    ```
+
+    By default, all keys are shared.
+
+    *Eileen M. Uchitelle*
+
+*   Add controller action source location to routes inspector.
+
+    The routes inspector now shows where controller actions are defined.
+    In `rails routes --expanded`, a new "Action Location" field displays
+    the file and line number of each action method.
+
+    On the routing error page, when `RAILS_EDITOR` or `EDITOR` is set,
+    a clickable ✏️ icon appears next to each Controller#Action that opens
+    the action directly in the editor.
+
+    *Guillermo Iguaran*
+
+*   Active Support notifications for CSRF warnings.
+
+    Switches from direct logging to event-driven logging, allowing others to
+    subscribe to and act on CSRF events:
+
+    - `csrf_token_fallback.action_controller`
+    - `csrf_request_blocked.action_controller`
+    - `csrf_javascript_blocked.action_controller`
+
+    *Jeremy Daer*
+
+*   Modern header-based CSRF protection.
+
+    Modern browsers send the `Sec-Fetch-Site` header to indicate the relationship
+    between request initiator and target origins. Rails now uses this header to
+    verify same-origin requests without requiring authenticity tokens.
+
+    Two verification strategies are available via `protect_from_forgery using:`:
+
+    * `:header_only` - Uses `Sec-Fetch-Site` header only. Rejects requests
+      without a valid header. Default for new Rails 8.2 applications.
+
+    * `:header_or_legacy_token` - Uses `Sec-Fetch-Site` header when present,
+      falls back to authenticity token verification for older browsers.
+
+    Configure trusted origins for legitimate cross-site requests (OAuth callbacks,
+    third-party embeds) with `trusted_origins:`:
+
+    ```ruby
+    protect_from_forgery trusted_origins: %w[ https://accounts.google.com ]
+    ```
+
+    `InvalidAuthenticityToken` is deprecated in favor of `InvalidCrossOriginRequest`.
+
+    *Rosa Gutierrez*
+
+*   Fix `action_dispatch_request` early load hook call when building
+    Rails app middleware.
 
     *Gannon McGibbon*
 
-*   Speed up `ActionDispatch::Routing::Mapper::Scope#[]` by merging frame hashes.
+*   Emit a structured event when `action_on_open_redirect` is set to `:notify`
+    in addition to the existing Active Support Notification.
 
-    *Gannon McGibbon*
+    *Adrianna Chang*, *Hartley McGuire*
 
-*   Allow bots to ignore `allow_browser`.
+*   Support `text/markdown` format in `DebugExceptions` middleware.
 
-    *Matthew Nguyen*
+    When `text/markdown` is requested via the Accept header, error responses
+    are returned with `Content-Type: text/markdown` instead of HTML.
+    The existing text templates are reused for markdown output, allowing
+    CLI tools and other clients to receive byte-efficient error information.
 
-*   Deprecate drawing routes with multiple paths to make routing faster.
-    You may use `with_options` or a loop to make drawing multiple paths easier.
+    *Guillermo Iguaran*
 
-    ```ruby
-    # Before
-    get "/users", "/other_path", to: "users#index"
+*   Support dynamic `to:` and `within:` options in `rate_limit`.
 
-    # After
-    get "/users", to: "users#index"
-    get "/other_path", to: "users#index"
-    ```
-
-    *Gannon McGibbon*
-
-*   Make `http_cache_forever` use `immutable: true`
-
-    *Nate Matykiewicz*
-
-*   Add `config.action_dispatch.strict_freshness`.
-
-    When set to `true`, the `ETag` header takes precedence over the `Last-Modified` header when both are present,
-    as specified by RFC 7232, Section 6.
-
-    Defaults to `false` to maintain compatibility with previous versions of Rails, but is enabled as part of
-    Rails 8.0 defaults.
-
-    *heka1024*
-
-*   Support `immutable` directive in Cache-Control
+    The `to:` and `within:` options now accept callables (lambdas or procs) and
+    method names (as symbols), in addition to static values. This allows for
+    dynamic rate limiting based on user attributes or other runtime conditions.
 
     ```ruby
-    expires_in 1.minute, public: true, immutable: true
-    # Cache-Control: public, max-age=60, immutable
+    class APIController < ApplicationController
+      rate_limit to: :max_requests, within: :time_window, by: -> { current_user.id }
+
+      private
+        def max_requests
+          current_user.premium? ? 1000 : 100
+        end
+
+        def time_window
+          current_user.premium? ? 1.hour : 1.minute
+        end
+    end
     ```
 
-    *heka1024*
+    *Murilo Duarte*
 
-*   Add `:wasm_unsafe_eval` mapping for `content_security_policy`
+*   Define `ActionController::Parameters#deconstruct_keys` to support pattern matching
 
     ```ruby
-    # Before
-    policy.script_src "'wasm-unsafe-eval'"
+    if params in { search:, page: }
+      Article.search(search).limit(page)
+    else
+      …
+    end
 
-    # After
-    policy.script_src :wasm_unsafe_eval
+    case (value = params[:string_or_hash_with_nested_key])
+    in String
+      # do something with a String `value`…
+    in { nested_key: }
+      # do something with `nested_key` or `value`
+    else
+      # …
+    end
     ```
 
-    *Joe Haig*
+    *Sean Doyle*
 
-*   Add `display_capture` and `keyboard_map` in `permissions_policy`
+*   Submit test requests using `as: :html` with `Content-Type: x-www-form-urlencoded`
 
-    *Cyril Blaecke*
+    *Sean Doyle*
 
-*   Add `connect` route helper.
+*   Add `svg:` renderer:
 
-    *Samuel Williams*
+    ```ruby
+    class Page
+      def to_svg
+        body
+      end
+    end
 
-Please check [7-2-stable](https://github.com/rails/rails/blob/7-2-stable/actionpack/CHANGELOG.md) for previous changes.
+    class PagesController < ActionController::Base
+      def show
+        @page = Page.find(params[:id])
+
+        respond_to do |format|
+          format.html
+          format.svg { render svg: @page }
+        end
+      end
+    end
+    ```
+
+    *Thiago Youssef*
+
+Please check [8-1-stable](https://github.com/rails/rails/blob/8-1-stable/actionpack/CHANGELOG.md) for previous changes.

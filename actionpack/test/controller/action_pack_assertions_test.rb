@@ -496,6 +496,25 @@ class ActionPackAssertionsControllerTest < ActionController::TestCase
     assert_response 500
     assert_equal "Boom", response.body
   end
+
+  def test_assert_in_body
+    post :raise_exception_on_get
+    assert_in_body "request method: POST"
+    assert_not_in_body "request method: GET"
+  end
+
+  def test_url_helper_delegation
+    @controller = ActionPackAssertionsController.new
+    @controller.request = ActionDispatch::TestRequest.create
+
+    with_routing do |set|
+      set.draw do
+        get "/route_one", to: "action_pack_assertions#nothing", as: :route_one
+      end
+
+      assert_equal("/route_one", route_one_path)
+    end
+  end
 end
 
 class ActionPackHeaderTest < ActionController::TestCase

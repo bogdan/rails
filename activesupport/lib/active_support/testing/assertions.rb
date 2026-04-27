@@ -71,25 +71,29 @@ module ActiveSupport
       #     post :delete, params: { id: ... }
       #   end
       #
-      # An array of expressions can also be passed in and evaluated.
+      # An array of expressions can be passed in and evaluated.
       #
       #   assert_difference [ 'Article.count', 'Post.count' ], 2 do
       #     post :create, params: { article: {...} }
       #   end
       #
-      # A hash of expressions/numeric differences can also be passed in and evaluated.
+      # A hash of expressions/numeric differences can be passed in and evaluated.
       #
-      #   assert_difference ->{ Article.count } => 1, ->{ Notification.count } => 2 do
+      #   assert_difference({ 'Article.count' => 1, 'Notification.count' => 2 }) do
       #     post :create, params: { article: {...} }
       #   end
       #
-      # A lambda or a list of lambdas can be passed in and evaluated:
+      # A lambda, a list of lambdas or a hash of lambdas/numeric differences can be passed in and evaluated:
       #
       #   assert_difference ->{ Article.count }, 2 do
       #     post :create, params: { article: {...} }
       #   end
       #
       #   assert_difference [->{ Article.count }, ->{ Post.count }], 2 do
+      #     post :create, params: { article: {...} }
+      #   end
+      #
+      #   assert_difference ->{ Article.count } => 1, ->{ Notification.count } => 2 do
       #     post :create, params: { article: {...} }
       #   end
       #
@@ -120,7 +124,8 @@ module ActiveSupport
           actual = exp.call
           rich_message = -> do
             code_string = code.respond_to?(:call) ? _callable_to_source_string(code) : code
-            error = "`#{code_string}` didn't change by #{diff}, but by #{actual - before_value}"
+            error = "`#{code_string}` didn't change by #{diff}, but by #{actual - before_value}."
+            error = "#{error}\n#{diff before_value + diff, actual}" if Minitest::VERSION > "6"
             error = "#{message}.\n#{error}" if message
             error
           end
@@ -181,10 +186,22 @@ module ActiveSupport
       #
       # The keyword arguments +:from+ and +:to+ can be given to specify the
       # expected initial value and the expected value after the block was
-      # executed.
+      # executed. The comparison is done using case equality (===), which means
+      # you can specify patterns or classes:
       #
+      #   # Exact value match
       #   assert_changes :@object, from: nil, to: :foo do
       #     @object = :foo
+      #   end
+      #
+      #   # Case equality
+      #   assert_changes -> { user.token }, to: /\w{32}/ do
+      #     user.generate_token
+      #   end
+      #
+      #   # Type check
+      #   assert_changes -> { current_error }, from: nil, to: RuntimeError do
+      #     raise "Oops"
       #   end
       #
       # An error message can be specified.
@@ -212,7 +229,7 @@ module ActiveSupport
         rich_message = -> do
           code_string = expression.respond_to?(:call) ? _callable_to_source_string(expression) : expression
           error = "`#{code_string}` didn't change"
-          error = "#{error}. It was already #{to.inspect}" if before == to
+          error = "#{error}. It was already #{to.inspect}." if before == to
           error = "#{message}.\n#{error}" if message
           error
         end
@@ -238,10 +255,22 @@ module ActiveSupport
       #   end
       #
       # Provide the optional keyword argument +:from+ to specify the expected
-      # initial value.
+      # initial value. The comparison is done using case equality (===), which means
+      # you can specify patterns or classes:
       #
+      #   # Exact value match
       #   assert_no_changes -> { Status.all_good? }, from: true do
       #     post :create, params: { status: { ok: true } }
+      #   end
+      #
+      #   # Case equality
+      #   assert_no_changes -> { user.token }, from: /\w{32}/ do
+      #     user.touch
+      #   end
+      #
+      #   # Type check
+      #   assert_no_changes -> { current_error }, from: RuntimeError do
+      #     retry_operation
       #   end
       #
       # An error message can be specified.
@@ -268,8 +297,9 @@ module ActiveSupport
 
         rich_message = -> do
           code_string = expression.respond_to?(:call) ? _callable_to_source_string(expression) : expression
-          error = "`#{code_string}` changed"
+          error = "`#{code_string}` changed."
           error = "#{message}.\n#{error}" if message
+          error = "#{error}\n#{diff before, after}" if Minitest::VERSION > "6"
           error
         end
 
@@ -318,13 +348,16 @@ module ActiveSupport
             lines[0] = lines[0].byteslice(location[1]...)
             source = lines.join.strip
 
+            # Strip stabby lambda from Ruby 4.1+
+            source = source.sub(/^->\s*/, "")
+
             # We ignore procs defined with do/end as they are likely multi-line anyway.
             if source.start_with?("{")
               source.delete_suffix!("}")
               source.delete_prefix!("{")
               source.strip!
               # It won't read nice if the callable contains multiple
-              # lines, and it should be a rare occurence anyway.
+              # lines, and it should be a rare occurrence anyway.
               # Same if it takes arguments.
               if !source.include?("\n") && !source.start_with?("|")
                 return source

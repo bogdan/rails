@@ -26,7 +26,9 @@ module Rails
               ssl_default_redirect_status: config.action_dispatch.ssl_default_redirect_status
           end
 
-          middleware.use ::Rack::Sendfile, config.action_dispatch.x_sendfile_header
+          if config.action_dispatch.x_sendfile_header
+            middleware.use ::Rack::Sendfile, config.action_dispatch.x_sendfile_header
+          end
 
           if config.public_file_server.enabled
             headers = config.public_file_server.headers || {}
@@ -83,7 +85,7 @@ module Rails
           unless config.api_only
             middleware.use ::ActionDispatch::Flash
             middleware.use ::ActionDispatch::ContentSecurityPolicy::Middleware
-            middleware.use ::ActionDispatch::PermissionsPolicy::Middleware
+            middleware.use ::ActionDispatch::PermissionsPolicy::Middleware if config.permissions_policy
           end
 
           middleware.use ::Rack::Head

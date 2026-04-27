@@ -91,7 +91,7 @@ module ActionView
 
         def render_dependencies
           dependencies = []
-          render_calls = source.split(/\brender\b/).drop(1)
+          render_calls = source.scan(/<%(?:(?:(?!<%).)*?\brender\b((?:(?!%>).)*?))%>/m).flatten
 
           render_calls.each do |arguments|
             add_dependencies(dependencies, arguments, LAYOUT_DEPENDENCY)
@@ -127,7 +127,8 @@ module ActionView
                 wildcard_dependency << scanner.pre_match
 
                 while unmatched_brackets > 0 && !scanner.eos?
-                  scanner.scan_until(/[{}]/)
+                  found = scanner.scan_until(/[{}]/)
+                  return unless found
 
                   case scanner.matched
                   when "{"

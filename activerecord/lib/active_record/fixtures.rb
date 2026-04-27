@@ -242,10 +242,10 @@ module ActiveRecord
   # and one for the humans. Why don't we generate the primary key instead?
   # Hashing each fixture's label yields a consistent ID:
   #
-  #   george: # generated id: 503576764
+  #   george: # generated id: 380982691
   #     name: George the Monkey
   #
-  #   reginald: # generated id: 324201669
+  #   reginald: # generated id: 41001176
   #     name: Reginald the Pirate
   #
   # Active Record looks at the fixture's model class, discovers the correct
@@ -686,8 +686,8 @@ module ActiveRecord
               check_all_foreign_keys_valid!(conn)
 
               # Cap primary key sequences to max(pk).
-              if conn.respond_to?(:reset_pk_sequence!)
-                set.each { |fs| conn.reset_pk_sequence!(fs.table_name) }
+              if conn.respond_to?(:reset_column_sequences!)
+                conn.reset_column_sequences!(set.map { |fs| [fs.table_name] })
               end
             end
           end

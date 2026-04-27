@@ -41,6 +41,32 @@ class CalculationsTest < ActiveRecord::TestCase
     assert_async_equal 318, Account.async_sum(Account.arel_table[:credit_limit])
   end
 
+  def test_should_sum_with_qualified_name_on_loaded
+    accounts = Account.all
+
+    assert_not_predicate accounts, :loaded?
+    assert_equal 318, accounts.sum("accounts.credit_limit")
+
+    accounts.load
+
+    assert_predicate accounts, :loaded?
+    assert_equal 318, accounts.sum("accounts.credit_limit")
+  end
+
+  def test_should_count_with_group_by_qualified_name_on_loaded
+    accounts = Account.group("accounts.id")
+
+    expected = { 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1 }
+
+    assert_not_predicate accounts, :loaded?
+    assert_equal expected, accounts.count
+
+    accounts.load
+
+    assert_predicate accounts, :loaded?
+    assert_equal expected, accounts.count
+  end
+
   def test_should_average_field
     assert_equal 53.0, Account.average(:credit_limit)
     assert_async_equal 53.0, Account.async_average(:credit_limit)
@@ -227,7 +253,7 @@ class CalculationsTest < ActiveRecord::TestCase
   end
 
   def test_should_not_use_alias_for_grouped_field
-    assert_queries_match(/GROUP BY #{Regexp.escape(Account.lease_connection.quote_table_name("accounts.firm_id"))}/i) do
+    assert_queries_match(/GROUP BY #{Regexp.escape(quote_table_name("accounts.firm_id"))}/i) do
       c = Account.group(:firm_id).order("accounts_firm_id").sum(:credit_limit)
       assert_equal [1, 2, 6, 9], c.keys.compact
     end
@@ -527,7 +553,7 @@ class CalculationsTest < ActiveRecord::TestCase
   end
 
   def test_should_calculate_grouped_by_function
-    c = Company.group("UPPER(#{QUOTED_TYPE})").count(:all)
+    c = Company.group("UPPER(#{ARTest::QUOTED_TYPE})").count(:all)
     assert_equal 2, c[nil]
     assert_equal 1, c["DEPENDENTFIRM"]
     assert_equal 5, c["CLIENT"]
@@ -535,7 +561,7 @@ class CalculationsTest < ActiveRecord::TestCase
   end
 
   def test_should_calculate_grouped_by_function_with_table_alias
-    c = Company.group("UPPER(companies.#{QUOTED_TYPE})").count(:all)
+    c = Company.group("UPPER(companies.#{ARTest::QUOTED_TYPE})").count(:all)
     assert_equal 2, c[nil]
     assert_equal 1, c["DEPENDENTFIRM"]
     assert_equal 5, c["CLIENT"]
@@ -729,6 +755,13 @@ class CalculationsTest < ActiveRecord::TestCase
     assert_equal 4, Account.count { |account| account.credit_limit.modulo(10).zero? }
   end
 
+  def test_count_with_empty_in
+    assert_queries_count(0) do
+      assert_equal 0, Topic.where(id: []).count
+      assert_async_equal 0, Topic.where(id: []).async_count
+    end
+  end
+
   def test_should_sum_expression
     assert_equal 636, Account.sum("2 * credit_limit")
   end
@@ -815,6 +848,12 @@ class CalculationsTest < ActiveRecord::TestCase
     Company.create!(name: "test", contracts: [Contract.new(developer_id: 7)])
 
     assert_equal 7, Company.includes(:contracts).sum(:developer_id)
+  end
+
+  def test_sum_with_grouped_calculation
+    expected = { 0 => 0, 1 => 0, 3 => 0 }
+
+    assert_equal(expected, Post.group(:tags_count).sum)
   end
 
   def test_from_option_with_specified_index
@@ -1150,11 +1189,13 @@ class CalculationsTest < ActiveRecord::TestCase
 
   def test_pluck_with_join
     assert_equal [[2, 2], [4, 4]], Reply.includes(:topic).order(:id).pluck(:id, topics: [:id])
+    assert_equal [[2, 2], [4, 4]], Reply.includes(:topic).order(:id).pluck(:id, topics: :id)
     assert_equal [[2, 2], [4, 4]], Reply.includes(:topic).order(:id).pluck(:id, :"topics.id")
   end
 
   def test_pluck_with_join_alias
     assert_equal [[2, 1], [4, 3]], Reply.includes(:topic).order(:id).pluck(:id, topic: [:id])
+    assert_equal [[2, 1], [4, 3]], Reply.includes(:topic).order(:id).pluck(:id, topic: :id)
     assert_equal [[2, 1], [4, 3]], Reply.includes(:topic).order(:id).pluck(:id, :"topic.id")
   end
 
@@ -1183,9 +1224,8 @@ class CalculationsTest < ActiveRecord::TestCase
   end
 
   def test_group_by_with_quoted_count_and_order_by_alias
-    quoted_posts_id = Post.lease_connection.quote_table_name("posts.id")
     expected = { "SpecialPost" => 1, "StiPost" => 1, "Post" => 9 }
-    actual = Post.group(:type).order("count_posts_id").count(quoted_posts_id)
+    actual = Post.group(:type).order("count_posts_id").count(quote_table_name("posts.id"))
     assert_equal expected, actual
   end
 
@@ -1238,6 +1278,18 @@ class CalculationsTest < ActiveRecord::TestCase
     takes_relation = Topic.select(:approved, :id).order(:id)
     assert_equal [1, 2, 3, 4, 5], takes_relation.pluck(:id)
     assert_equal [false, true, true, true, true], takes_relation.pluck(:approved)
+  end
+
+  def test_pluck_with_qualified_name_on_loaded
+    topics = Topic.joins(:replies).order(:id)
+
+    assert_not_predicate topics, :loaded?
+    assert_equal [[1, 2], [3, 4]], topics.pluck("topics.id", "replies.id")
+
+    topics.load
+
+    assert_predicate topics, :loaded?
+    assert_equal [[1, 2], [3, 4]], topics.pluck("topics.id", "replies.id")
   end
 
   def test_pluck_columns_with_same_name

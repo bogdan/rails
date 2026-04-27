@@ -48,7 +48,7 @@ module ActiveRecord
     # way of creating a namespace for tables in a shared database. By default, the prefix is the
     # empty string.
     #
-    # If you are organising your models within modules you can add a prefix to the models within
+    # If you are organizing your models within modules you can add a prefix to the models within
     # a namespace by defining a singleton method in the parent module called table_name_prefix which
     # returns your chosen prefix.
 
@@ -65,7 +65,7 @@ module ActiveRecord
     # Works like +table_name_prefix=+, but appends instead of prepends (set to "_basecamp" gives "projects_basecamp",
     # "people_basecamp"). By default, the suffix is the empty string.
     #
-    # If you are organising your models within modules, you can add a suffix to the models within
+    # If you are organizing your models within modules, you can add a suffix to the models within
     # a namespace by defining a singleton method in the parent module called table_name_suffix which
     # returns your chosen suffix.
 
@@ -113,17 +113,19 @@ module ActiveRecord
     # :singleton-method: implicit_order_column
     # :call-seq: implicit_order_column
     #
-    # The name of the column records are ordered by if no explicit order clause
+    # The name of the column(s) records are ordered by if no explicit order clause
     # is used during an ordered finder call. If not set the primary key is used.
 
     ##
     # :singleton-method: implicit_order_column=
     # :call-seq: implicit_order_column=(column_name)
     #
-    # Sets the column to sort records by when no explicit order clause is used
-    # during an ordered finder call. Useful when the primary key is not an
-    # auto-incrementing integer, for example when it's a UUID. Records are subsorted
-    # by the primary key if it exists to ensure deterministic results.
+    # Sets the column(s) to sort records by when no explicit order clause is used
+    # during an ordered finder call. Useful for models where the primary key isn't an
+    # auto-incrementing integer (such as UUID).
+    #
+    # By default, records are subsorted by primary key to ensure deterministic results.
+    # To disable this subsort behavior, set `implicit_order_column` to `["column_name", nil]`.
 
     ##
     # :singleton-method: immutable_strings_by_default=
@@ -176,9 +178,8 @@ module ActiveRecord
         alias_method :inheritance_column=, :real_inheritance_column=
       end
 
-      self.protected_environments = ["production"]
-
       self.ignored_columns = [].freeze
+      self.only_columns = [].freeze
 
       delegate :type_for_attribute, :column_for_attribute, to: :class
 
@@ -281,7 +282,7 @@ module ActiveRecord
         @predicate_builder = nil
       end
 
-      # Returns a quoted version of the table name, used to construct SQL statements.
+      # Returns a quoted version of the table name.
       def quoted_table_name
         adapter_class.quote_table_name(table_name)
       end
@@ -310,7 +311,14 @@ module ActiveRecord
       # The array of names of environments where destructive actions should be prohibited. By default,
       # the value is <tt>["production"]</tt>.
       def protected_environments
-        if defined?(@protected_environments)
+        ActiveRecord.deprecator.warn <<~MSG
+          ActiveRecord::Base.protected_environments is deprecated in favor of
+          ActiveRecord.protected_environments and will be removed in Rails 9.0.
+        MSG
+
+        if self == ActiveRecord::Base
+          ActiveRecord.protected_environments
+        elsif defined?(@protected_environments)
           @protected_environments
         else
           superclass.protected_environments
@@ -319,7 +327,16 @@ module ActiveRecord
 
       # Sets an array of names of environments where destructive actions should be prohibited.
       def protected_environments=(environments)
-        @protected_environments = environments.map(&:to_s)
+        ActiveRecord.deprecator.warn <<~MSG
+          ActiveRecord::Base.protected_environments= is deprecated in favor of
+          ActiveRecord.protected_environments= and will be removed in Rails 9.0.
+        MSG
+
+        if self == ActiveRecord::Base
+          ActiveRecord.protected_environments = environments
+        else
+          @protected_environments = environments.map(&:to_s)
+        end
       end
 
       def real_inheritance_column=(value) # :nodoc:
@@ -330,6 +347,12 @@ module ActiveRecord
       # accessors defined, and won't be referenced in SQL queries.
       def ignored_columns
         @ignored_columns || superclass.ignored_columns
+      end
+
+      # The list of columns names the model should allow. Only columns are used to define
+      # attribute accessors, and are referenced in SQL queries.
+      def only_columns
+        @only_columns || superclass.only_columns
       end
 
       # Sets the columns names the model should ignore. Ignored columns won't have attribute
@@ -364,8 +387,15 @@ module ActiveRecord
       #   user = Project.create!(name: "First Project")
       #   user.category # => raises NoMethodError
       def ignored_columns=(columns)
+        check_model_columns(@only_columns.present?)
         reload_schema_from_cache
         @ignored_columns = columns.map(&:to_s).freeze
+      end
+
+      def only_columns=(columns)
+        check_model_columns(@ignored_columns.present?)
+        reload_schema_from_cache
+        @only_columns = columns.map(&:to_s).freeze
       end
 
       def sequence_name
@@ -443,10 +473,6 @@ module ActiveRecord
         end
       end
 
-      def yaml_encoder # :nodoc:
-        @yaml_encoder ||= ActiveModel::AttributeSet::YAMLEncoder.new(attribute_types)
-      end
-
       # Returns the column object for the named attribute.
       # Returns an ActiveRecord::ConnectionAdapters::NullColumn if the
       # named attribute does not exist.
@@ -501,7 +527,7 @@ module ActiveRecord
       # when just after creating a table you want to populate it with some default
       # values, e.g.:
       #
-      #  class CreateJobLevels < ActiveRecord::Migration[8.0]
+      #  class CreateJobLevels < ActiveRecord::Migration[8.2]
       #    def up
       #      create_table :job_levels do |t|
       #        t.integer :id
@@ -562,7 +588,6 @@ module ActiveRecord
           @columns_hash = nil
           @schema_loaded = false
           @attribute_names = nil
-          @yaml_encoder = nil
           if recursive
             subclasses.each do |descendant|
               descendant.send(:reload_schema_from_cache)
@@ -577,6 +602,7 @@ module ActiveRecord
           child_class.reload_schema_from_cache(false)
           child_class.class_eval do
             @ignored_columns = nil
+            @only_columns = nil
           end
         end
 
@@ -590,7 +616,11 @@ module ActiveRecord
           end
 
           columns_hash = schema_cache.columns_hash(table_name)
-          columns_hash = columns_hash.except(*ignored_columns) unless ignored_columns.empty?
+          if only_columns.present?
+            columns_hash = columns_hash.slice(*only_columns)
+          elsif ignored_columns.present?
+            columns_hash = columns_hash.except(*ignored_columns)
+          end
           @columns_hash = columns_hash.freeze
 
           _default_attributes # Precompute to cache DB-dependent attribute types
@@ -619,14 +649,18 @@ module ActiveRecord
           end
         end
 
-        def type_for_column(connection, column)
-          type = connection.lookup_cast_type_from_column(column)
+        def type_for_column(column)
+          type = column.cast_type
 
           if immutable_strings_by_default && type.respond_to?(:to_immutable_string)
             type = type.to_immutable_string
           end
 
           type
+        end
+
+        def check_model_columns(columns_present)
+          raise ArgumentError, "You can not use both only_columns and ignored_columns in the same model." if columns_present
         end
     end
   end

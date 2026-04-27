@@ -16,7 +16,7 @@ module ActiveRecord
       class_methods do
         # Encrypts the +name+ attribute.
         #
-        # === Options
+        # ==== Options
         #
         # * <tt>:key_provider</tt> - A key provider to provide encryption and decryption keys. Defaults to
         #   +ActiveRecord::Encryption.key_provider+.
@@ -30,10 +30,10 @@ module ActiveRecord
         #   will use the oldest encryption scheme to encrypt new data by default. You can change this by setting
         #   <tt>deterministic: { fixed: false }</tt>. That will make it use the newest encryption scheme for encrypting new
         #   data.
-        # * <tt>:support_unencrypted_data</tt> - If `config.active_record.encryption.support_unencrypted_data` is +true+,
-        #   you can set this to +false+ to opt out of unencrypted data support for this attribute. This is useful for
-        #   scenarios where you encrypt one column, and want to disable support for unencrypted data without having to tweak
-        #   the global setting.
+        # * <tt>:support_unencrypted_data</tt> - When true, unencrypted data can be read normally. When false, it will raise errors.
+        #   Falls back to +config.active_record.encryption.support_unencrypted_data+ if no value is provided.
+        #   This is useful for scenarios where you encrypt one column, and want to disable support for unencrypted data
+        #   without having to tweak the global setting.
         # * <tt>:downcase</tt> - When true, it converts the encrypted content to downcase automatically. This allows to
         #   effectively ignore case when querying data. Notice that the case is lost. Use +:ignore_case+ if you are interested
         #   in preserving it.
@@ -61,7 +61,7 @@ module ActiveRecord
           end
         end
 
-        # Given a attribute name, it returns the name of the source attribute when it's a preserved one.
+        # Given an attribute name, it returns the name of the source attribute when it's a preserved one.
         def source_attribute_from_preserved_attribute(attribute_name)
           attribute_name.to_s.sub(ORIGINAL_ATTRIBUTE_PREFIX, "") if attribute_name.start_with?(ORIGINAL_ATTRIBUTE_PREFIX)
         end

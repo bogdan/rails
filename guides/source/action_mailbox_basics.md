@@ -1,4 +1,4 @@
-**DO NOT READ THIS FILE ON GITHUB, GUIDES ARE PUBLISHED ON https://guides.rubyonrails.org.**
+**DO NOT READ THIS FILE ON GITHUB, GUIDES ARE PUBLISHED ON <https://guides.rubyonrails.org>.**
 
 Action Mailbox Basics
 =====================
@@ -165,7 +165,7 @@ config.action_mailbox.ingress = :mandrill
 ```
 
 [Configure
-Mandrill](https://mandrill.zendesk.com/hc/en-us/articles/205583197-Inbound-Email-Processing-Overview)
+Mandrill](https://mailchimp.com/developer/transactional/guides/set-up-inbound-email-processing/)
 to route inbound emails to `/rails/action_mailbox/mandrill/inbound_emails`. If
 your application lived at `https://example.com`, you would specify the
 fully-qualified URL
@@ -471,14 +471,14 @@ controller mounted at `/rails/conductor/action_mailbox/inbound_emails`, which
 gives you an index of all the InboundEmails in the system, their state of
 processing, and a form to create a new InboundEmail as well.
 
-Here is and example of testing an inbound email with Action Mailbox TestHelpers.
+Here is an example of testing an inbound email with Action Mailbox TestHelpers.
 
 ```ruby
 class ForwardsMailboxTest < ActionMailbox::TestCase
   test "directly recording a client forward for a forwarder and forwardee corresponding to one project" do
     assert_difference -> { people(:david).buckets.first.recordings.count } do
       receive_inbound_email_from_mail \
-        to: 'save@example.com',
+        to: "save@example.com",
         from: people(:david).email_address,
         subject: "Fwd: Status update?",
         body: <<~BODY

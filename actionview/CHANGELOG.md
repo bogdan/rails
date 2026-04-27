@@ -1,27 +1,18 @@
-## Rails 8.0.0.beta1 (September 26, 2024) ##
+*   Skip blank attribute names in tag helpers to avoid generating invalid HTML.
 
-*   Enable DependencyTracker to evaluate renders with trailing interpolation.
+    *Mike Dalessio*
 
-    ```erb
-    <%= render "maintenance_tasks/runs/info/#{run.status}" %>
-    ```
+*   Fix tag parameter content being overwritten instead of combined with tag block content.
+    Before `tag.div("Hello ") { "World" }` would just return `<div>World</div>`, now it returns `<div>Hello World</div>`.
 
-    Previously, the DependencyTracker would ignore this render, but now it will
-    mark all partials in the "maintenance_tasks/runs/info" folder as
-    dependencies.
+    *DHH*
 
-    *Hartley McGuire*
+*   Add ability to pass a block when rendering collection. The block will be executed for each rendered element in the collection.
 
-*   Rename `text_area` methods into `textarea`
+    *Vincent Robert*
 
-    Old names are still available as aliases.
+*   Add `key:` and `expires_in:` options under `cached:` to `render` when used with `collection:`
 
-    *Sean Doyle*
+    *Jarrett Lusso*
 
-*   Rename `check_box*` methods into `checkbox*`.
-
-    Old names are still available as aliases.
-
-    *Jean Boussier*
-
-Please check [7-2-stable](https://github.com/rails/rails/blob/7-2-stable/actionview/CHANGELOG.md) for previous changes.
+Please check [8-1-stable](https://github.com/rails/rails/blob/8-1-stable/actionview/CHANGELOG.md) for previous changes.

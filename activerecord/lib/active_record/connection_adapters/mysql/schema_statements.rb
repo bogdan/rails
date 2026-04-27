@@ -8,7 +8,7 @@ module ActiveRecord
         def indexes(table_name)
           indexes = []
           current_index = nil
-          internal_exec_query("SHOW KEYS FROM #{quote_table_name(table_name)}", "SCHEMA").each do |row|
+          query_all("SHOW KEYS FROM #{quote_table_name(table_name)}").each do |row|
             if current_index != row["Key_name"]
               next if row["Key_name"] == "PRIMARY" # skip the primary key
               current_index = row["Key_name"]
@@ -21,7 +21,7 @@ module ActiveRecord
                 index_using = mysql_index_type
               end
 
-              indexes << [
+              index = [
                 row["Table"],
                 row["Key_name"],
                 row["Non_unique"].to_i == 0,
@@ -30,8 +30,14 @@ module ActiveRecord
                 orders: {},
                 type: index_type,
                 using: index_using,
-                comment: row["Index_comment"].presence
+                comment: row["Index_comment"].presence,
               ]
+
+              if supports_disabling_indexes?
+                index[-1][:enabled] = mariadb? ? row["Ignored"] == "NO" : row["Visible"] == "YES"
+              end
+
+              indexes << index
             end
 
             if expression = row["Expression"]
@@ -63,8 +69,7 @@ module ActiveRecord
                 columns, order: orders, length: lengths
               ).values.join(", ")
             end
-
-            IndexDefinition.new(*index, **options)
+            MySQL::IndexDefinition.new(*index, **options)
           end
         rescue StatementInvalid => e
           if e.message.match?(/Table '.+' doesn't exist/)
@@ -74,14 +79,37 @@ module ActiveRecord
           end
         end
 
+        def create_index_definition(table_name, name, unique, columns, **options)
+          MySQL::IndexDefinition.new(table_name, name, unique, columns, **options)
+        end
+
+        def add_index_options(table_name, column_name, name: nil, if_not_exists: false, internal: false, **options) # :nodoc:
+          index, algorithm, if_not_exists = super
+          index.enabled = options[:enabled] unless options[:enabled].nil?
+          [index, algorithm, if_not_exists]
+        end
+
         def remove_column(table_name, column_name, type = nil, **options)
           if foreign_key_exists?(table_name, column: column_name)
             remove_foreign_key(table_name, column: column_name)
           end
-          super
+          algorithm = index_algorithm(options.delete(:algorithm))
+          lock = lock_clause(options.delete(:lock))
+          return if options[:if_exists] == true && !column_exists?(table_name, column_name)
+          sql = +"ALTER TABLE #{quote_table_name(table_name)} #{remove_column_for_alter(table_name, column_name, type, **options)}"
+          sql << ", #{algorithm}" if algorithm
+          sql << ", #{lock}" if lock
+          execute(sql)
         end
 
         def create_table(table_name, options: default_row_format, **)
+          super
+        end
+
+        def remove_foreign_key(from_table, to_table = nil, **options)
+          # RESTRICT is by default in MySQL.
+          options.delete(:on_update) if options[:on_update] == :restrict
+          options.delete(:on_delete) if options[:on_delete] == :restrict
           super
         end
 
@@ -202,6 +230,7 @@ module ActiveRecord
 
             MySQL::Column.new(
               field["Field"],
+              lookup_cast_type(type_metadata.sql_type),
               default,
               type_metadata,
               field["Null"] == "YES",
@@ -224,6 +253,13 @@ module ActiveRecord
             quoted_columns.each do |name, column|
               column << "(#{lengths[name]})" if lengths[name].present?
             end
+          end
+
+          def valid_index_options
+            index_options = super
+            index_options << :enabled if supports_disabling_indexes?
+            index_options << :lock
+            index_options
           end
 
           def add_options_for_index_columns(quoted_columns, **options)

@@ -42,19 +42,33 @@ module Rails
 
     HEADERS = { lines: " Lines", code_lines: "   LOC", classes: "Classes", methods: "Methods" }
 
+    EXTENSIONS = %w[rb js ts css scss coffee rake erb]
+
+    PATTERN = /^(?!\.).*?\.(#{EXTENSIONS.join("|")})$/
+
     class_attribute :directories, default: DIRECTORIES
     class_attribute :test_types, default: TEST_TYPES
+    class_attribute :extensions, default: EXTENSIONS
+    class_attribute :pattern, default: PATTERN
 
-    # Add directories to the output of the `bin/rails stats` command.
+    # Add directories to the output of the <tt>bin/rails stats</tt> command.
     #
     #   Rails::CodeStatistics.register_directory("My Directory", "path/to/dir")
     #
-    # For directories that contain test code, set the `test_directory` argument to true.
+    # For directories that contain test code, set the <tt>test_directory</tt> argument to true.
     #
     #   Rails::CodeStatistics.register_directory("Model specs", "spec/models", test_directory: true)
     def self.register_directory(label, path, test_directory: false)
       self.directories << [label, path]
       self.test_types << label if test_directory
+    end
+
+    # Add extensions to the output of the <tt>bin/rails stats</tt> command.
+    #
+    #   Rails::CodeStatistics.register_extension("txt")
+    def self.register_extension(extension)
+      self.extensions += [extension]
+      self.pattern = /^(?!\.).*?\.(#{Regexp.union(extensions.map { |e| Regexp.escape(e) })})$/
     end
 
     def initialize(*pairs)
@@ -81,7 +95,7 @@ module Rails
         Hash[@pairs.map { |pair| [pair.first, calculate_directory_statistics(pair.last)] }]
       end
 
-      def calculate_directory_statistics(directory, pattern = /^(?!\.).*?\.(rb|js|ts|css|scss|coffee|rake|erb)$/)
+      def calculate_directory_statistics(directory, pattern = self.class.pattern)
         stats = Rails::CodeStatisticsCalculator.new
 
         Dir.foreach(directory) do |file_name|

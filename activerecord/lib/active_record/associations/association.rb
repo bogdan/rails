@@ -120,6 +120,14 @@ module ActiveRecord
         @association_scope = nil
       end
 
+      def set_strict_loading(record)
+        if owner.strict_loading_n_plus_one_only? && reflection.macro == :has_many
+          record.strict_loading!
+        else
+          record.strict_loading!(false, mode: owner.strict_loading_mode)
+        end
+      end
+
       # Set the inverse association, if possible
       def set_inverse_instance(record)
         if inverse = inverse_association_for(record)
@@ -224,7 +232,7 @@ module ActiveRecord
         _create_record(attributes, true, &block)
       end
 
-      # Whether the association represent a single record
+      # Whether the association represents a single record
       # or a collection of records.
       def collection?
         false
@@ -260,11 +268,7 @@ module ActiveRecord
           klass.with_connection do |c|
             sc.execute(binds, c, async: async) do |record|
               set_inverse_instance(record)
-              if owner.strict_loading_n_plus_one_only? && reflection.macro == :has_many
-                record.strict_loading!
-              else
-                record.strict_loading!(false, mode: owner.strict_loading_mode)
-              end
+              set_strict_loading(record)
             end
           end
         end
@@ -405,12 +409,24 @@ module ActiveRecord
         end
 
         def matches_foreign_key?(record)
-          if foreign_key_for?(record)
-            record.read_attribute(reflection.foreign_key) == owner.id ||
-              (foreign_key_for?(owner) && owner.read_attribute(reflection.foreign_key) == record.id)
-          else
-            owner.read_attribute(reflection.foreign_key) == record.id
-          end
+          (foreign_key_for?(record) && record_foreign_key_matches_owner?(record)) ||
+            (foreign_key_for?(owner) && owner_foreign_key_matches_record?(record))
+        end
+
+        def record_foreign_key_matches_owner?(record)
+          foreign_key_values(record) == primary_key_values(owner)
+        end
+
+        def owner_foreign_key_matches_record?(record)
+          foreign_key_values(owner) == primary_key_values(record)
+        end
+
+        def foreign_key_values(record)
+          Array(reflection.foreign_key).map { |key| record.read_attribute(key) }
+        end
+
+        def primary_key_values(record)
+          Array(reflection.association_primary_key(record.class)).map { |key| record.read_attribute(key) }
         end
     end
   end

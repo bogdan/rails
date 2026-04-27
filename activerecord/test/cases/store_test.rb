@@ -31,6 +31,14 @@ class StoreTest < ActiveRecord::TestCase
     assert_equal "37signals.com", @john.homepage
   end
 
+  test "reading store attributes with indifferent access" do
+    @john.preferences = { "remember_login" => "yes" }
+    assert_equal "yes", @john.remember_login
+
+    @john.preferences = { remember_login: "no" }
+    assert_equal "no", @john.remember_login
+  end
+
   test "writing store attributes does not update unchanged value" do
     admin_user = Admin::User.new(homepage: nil)
     admin_user.homepage = nil
@@ -326,11 +334,11 @@ class StoreTest < ActiveRecord::TestCase
 
   test "dump, load and dump again a model" do
     dumped = YAML.dump(@john)
-    loaded = YAML.respond_to?(:unsafe_load) ? YAML.unsafe_load(dumped) : YAML.load(dumped)
+    loaded = YAML.unsafe_load(dumped)
     assert_equal @john, loaded
 
     second_dump = YAML.dump(loaded)
-    second_loaded = YAML.respond_to?(:unsafe_load) ? YAML.unsafe_load(second_dump) : YAML.load(second_dump)
+    second_loaded = YAML.unsafe_load(second_dump)
     assert_equal @john, second_loaded
   end
 

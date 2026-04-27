@@ -84,6 +84,17 @@ class ActiveStorage::BlobTest < ActiveSupport::TestCase
     assert_equal data, blob.download
   end
 
+  test "create_and_upload! with a path traversal key raises on Disk service" do
+    assert_raises ActiveStorage::InvalidKeyError do
+      ActiveStorage::Blob.create_and_upload!(
+        key: "../../etc/passwd",
+        io: StringIO.new("malicious content"),
+        filename: "exploit.txt",
+        content_type: "text/plain"
+      )
+    end
+  end
+
   test "create_and_upload accepts a record for overrides" do
     assert_nothing_raised do
       create_blob(record: User.new)
@@ -161,6 +172,21 @@ class ActiveStorage::BlobTest < ActiveSupport::TestCase
     assert_not_predicate blob, :audio?
   end
 
+  test "blob type methods return false for nil content type" do
+    blob = create_blob_before_direct_upload(
+      filename: "unknown_file",
+      byte_size: 100,
+      checksum: "test_checksum",
+      content_type: nil
+    )
+
+    assert_nil blob.content_type
+    assert_not_predicate blob, :image?
+    assert_not_predicate blob, :video?
+    assert_not_predicate blob, :audio?
+    assert_not_predicate blob, :text?
+  end
+
   test "download yields chunks" do
     blob   = create_blob data: "a" * 5.0625.megabytes
     chunks = []
@@ -174,7 +200,7 @@ class ActiveStorage::BlobTest < ActiveSupport::TestCase
     assert_equal "a" * 64.kilobytes, chunks.second
   end
 
-  test "open with integrity" do
+  test "open yielding with integrity" do
     create_file_blob(filename: "racecar.jpg").tap do |blob|
       blob.open do |file|
         assert_predicate file, :binmode?
@@ -183,6 +209,21 @@ class ActiveStorage::BlobTest < ActiveSupport::TestCase
         assert file.path.end_with?(".jpg")
         assert_equal file_fixture("racecar.jpg").binread, file.read, "Expected downloaded file to match fixture file"
       end
+    end
+  end
+
+  test "open returning with integrity" do
+    file = nil
+    create_file_blob(filename: "racecar.jpg").tap do |blob|
+      file = blob.open
+
+      assert_predicate file, :binmode?
+      assert_equal 0, file.pos
+      assert File.basename(file.path).start_with?("ActiveStorage-#{blob.id}-")
+      assert file.path.end_with?(".jpg")
+      assert_equal file_fixture("racecar.jpg").binread, file.read, "Expected downloaded file to match fixture file"
+    ensure
+      file&.close!
     end
   end
 

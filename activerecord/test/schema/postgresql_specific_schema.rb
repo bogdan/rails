@@ -2,11 +2,9 @@
 
 ActiveRecord::Schema.define do
   ActiveRecord::TestCase.enable_extension!("uuid-ossp", connection)
-  ActiveRecord::TestCase.enable_extension!("pgcrypto",  connection) if supports_pgcrypto_uuid?
+  ActiveRecord::TestCase.enable_extension!("pgcrypto",  connection)
 
-  uuid_default = supports_pgcrypto_uuid? ? {} : { default: "uuid_generate_v4()" }
-
-  create_table :chat_messages, id: :uuid, force: true, **uuid_default do |t|
+  create_table :chat_messages, id: :uuid, force: true do |t|
     t.text :content
   end
 
@@ -15,11 +13,11 @@ ActiveRecord::Schema.define do
     t.text :content
   end
 
-  create_table :uuid_parents, id: :uuid, force: true, **uuid_default do |t|
+  create_table :uuid_parents, id: :uuid, force: true do |t|
     t.string :name
   end
 
-  create_table :uuid_children, id: :uuid, force: true, **uuid_default do |t|
+  create_table :uuid_children, id: :uuid, force: true do |t|
     t.string :name
     t.uuid :uuid_parent_id
   end
@@ -41,6 +39,7 @@ ActiveRecord::Schema.define do
     t.string :char2, limit: 50, default: "a varchar field"
     t.text :char3, default: "a text field"
     t.bigint :bigint_default, default: -> { "0::bigint" }
+    t.binary :binary_default_function, default: -> { "convert_to('A', 'UTF8')" }
     t.text :multiline_default, default: "--- []
 
 "
@@ -138,23 +137,23 @@ _SQL
   end
 
   create_table :uuid_comments, force: true, id: false do |t|
-    t.uuid :uuid, primary_key: true, **uuid_default
+    t.uuid :uuid, primary_key: true
     t.string :content
   end
 
   create_table :uuid_entries, force: true, id: false do |t|
-    t.uuid :uuid, primary_key: true, **uuid_default
+    t.uuid :uuid, primary_key: true
     t.string :entryable_type, null: false
     t.uuid :entryable_uuid, null: false
   end
 
   create_table :uuid_items, force: true, id: false do |t|
-    t.uuid :uuid, primary_key: true, **uuid_default
+    t.uuid :uuid, primary_key: true
     t.string :title
   end
 
   create_table :uuid_messages, force: true, id: false do |t|
-    t.uuid :uuid, primary_key: true, **uuid_default
+    t.uuid :uuid, primary_key: true
     t.string :subject
   end
 
@@ -175,24 +174,33 @@ _SQL
     t.integer :position_1
     t.integer :position_2
     t.integer :position_3
+    t.integer :position_4
 
     t.unique_constraint :position_1, name: "test_unique_constraints_position_deferrable_false"
     t.unique_constraint :position_2, name: "test_unique_constraints_position_deferrable_immediate", deferrable: :immediate
     t.unique_constraint :position_3, name: "test_unique_constraints_position_deferrable_deferred", deferrable: :deferred
+    t.unique_constraint :position_4, name: "test_unique_constraints_position_nulls_not_distinct", nulls_not_distinct: true
   end
 
   if supports_partitioned_indexes?
-    create_table(:measurements, id: false, force: true, options: "PARTITION BY LIST (city_id)") do |t|
-      t.string :city_id, null: false
-      t.date :logdate, null: false
-      t.integer :peaktemp
-      t.integer :unitsales
-      t.index [:logdate, :city_id], unique: true
+    begin
+      previous_unlogged_tables = ActiveRecord::ConnectionAdapters::PostgreSQLAdapter.create_unlogged_tables
+      ActiveRecord::ConnectionAdapters::PostgreSQLAdapter.create_unlogged_tables = false
+
+      create_table(:measurements, id: false, force: true, options: "PARTITION BY LIST (city_id)") do |t|
+        t.string :city_id, null: false
+        t.date :logdate, null: false
+        t.integer :peaktemp
+        t.integer :unitsales
+        t.index [:logdate, :city_id], unique: true
+      end
+      create_table(:measurements_toronto, id: false, force: true,
+                                          options: "PARTITION OF measurements FOR VALUES IN (1)")
+      create_table(:measurements_concepcion, id: false, force: true,
+                                            options: "PARTITION OF measurements FOR VALUES IN (2)")
+    ensure
+      ActiveRecord::ConnectionAdapters::PostgreSQLAdapter.create_unlogged_tables = previous_unlogged_tables
     end
-    create_table(:measurements_toronto, id: false, force: true,
-                                        options: "PARTITION OF measurements FOR VALUES IN (1)")
-    create_table(:measurements_concepcion, id: false, force: true,
-                                           options: "PARTITION OF measurements FOR VALUES IN (2)")
   end
 
   add_index(:companies, [:firm_id, :type], name: "company_include_index", include: [:name, :account_id])

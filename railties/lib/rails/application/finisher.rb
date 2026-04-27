@@ -144,6 +144,7 @@ module Rails
             get "/rails/info/routes"     => "rails/info#routes",     internal: true
             get "/rails/info/notes"      => "rails/info#notes",      internal: true
             get "/rails/info"            => "rails/info#index",      internal: true
+            get ".well-known/appspecific/com.chrome.devtools.json" => "rails/devtools#show",      internal: true
           end
 
           routes_reloader.run_after_load_paths = -> do
@@ -229,7 +230,8 @@ module Rails
 
       initializer :enable_yjit do
         if config.yjit && defined?(RubyVM::YJIT.enable)
-          RubyVM::YJIT.enable
+          options = config.yjit.is_a?(Hash) ? config.yjit : {}
+          RubyVM::YJIT.enable(**options)
         end
       end
     end

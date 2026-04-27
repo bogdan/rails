@@ -1,7 +1,15 @@
-## Rails 8.0.0.beta1 (September 26, 2024) ##
+*   Fix Action Cable origin check to respect `X-Forwarded-Host` behind reverse proxies.
 
-*   Add an `identifier` to the event payload for the ActiveSupport::Notification `transmit_subscription_confirmation.action_cable` and `transmit_subscription_rejection.action_cable`.
+    The `allow_same_origin_as_host` check previously compared against the raw
+    `HTTP_HOST` header, which fails when a proxy forwards requests with a
+    different internal host. It now uses `request.host_with_port`, consistent
+    with the rest of Rails.
 
-    *Keith Schacht*
+    *Jordan Brough*
 
-Please check [7-2-stable](https://github.com/rails/rails/blob/7-2-stable/actioncable/CHANGELOG.md) for previous changes.
+*   Channel generator now detects which JS package manager to use when
+    installing javascript dependencies.
+
+    *David Lowenfels*
+
+Please check [8-1-stable](https://github.com/rails/rails/blob/8-1-stable/actioncable/CHANGELOG.md) for previous changes.

@@ -33,7 +33,7 @@ class TrilogyAdapterTest < ActiveRecord::TrilogyTestCase
       ["traffic_lights", [
         { "location" => "US", "state" => ["NY"], "long_state" => ["a"] },
       ]]
-    ] * 1000
+    ] * 2000
 
     assert_raises(Timeout::Error) do
       Timeout.timeout(0.1) do
@@ -54,7 +54,7 @@ class TrilogyAdapterTest < ActiveRecord::TrilogyTestCase
 
   test "#explain for one query" do
     explain = @conn.explain("select * from posts")
-    assert_match %(possible_keys), explain
+    assert_match %r(posts), explain
   end
 
   test "#adapter_name answers name" do
@@ -253,7 +253,7 @@ class TrilogyAdapterTest < ActiveRecord::TrilogyTestCase
         assert_includes payload, :type_casted_binds
         assert_equal [], payload[:type_casted_binds].is_a?(Proc) ? payload[:type_casted_binds].call : payload[:type_casted_binds]
 
-        # Rails does not include :stament_name for cached queries 🤷‍♂️
+        # Rails does not include :statement_name for cached queries 🤷‍♂️
         assert_not_includes payload, :statement_name
 
         assert_includes payload, :cached
@@ -316,18 +316,10 @@ class TrilogyAdapterTest < ActiveRecord::TrilogyTestCase
     assert_equal [], @conn.indexes("users")
   end
 
-  test "#begin_db_transaction answers empty result" do
-    result = @conn.begin_db_transaction
-    assert_equal [], result.rows
-
-    # rollback transaction so it doesn't bleed into other tests
-    @conn.rollback_db_transaction
-  end
-
   test "#begin_db_transaction raises error" do
     error = Class.new(Exception)
     assert_raises error do
-      @conn.stub(:raw_execute, -> (*) { raise error }) do
+      @conn.stub(:perform_query, -> (*) { raise error }) do
         @conn.begin_db_transaction
       end
     end
@@ -336,15 +328,10 @@ class TrilogyAdapterTest < ActiveRecord::TrilogyTestCase
     @conn.rollback_db_transaction
   end
 
-  test "#commit_db_transaction answers empty result" do
-    result = @conn.commit_db_transaction
-    assert_equal [], result.rows
-  end
-
   test "#commit_db_transaction raises error" do
     error = Class.new(Exception)
     assert_raises error do
-      @conn.stub(:raw_execute, -> (*) { raise error }) do
+      @conn.stub(:perform_query, -> (*) { raise error }) do
         @conn.commit_db_transaction
       end
     end
@@ -353,7 +340,7 @@ class TrilogyAdapterTest < ActiveRecord::TrilogyTestCase
   test "#rollback_db_transaction raises error" do
     error = Class.new(Exception)
     assert_raises error do
-      @conn.stub(:raw_execute, -> (*) { raise error }) do
+      @conn.stub(:perform_query, -> (*) { raise error }) do
         @conn.rollback_db_transaction
       end
     end
@@ -431,43 +418,5 @@ class TrilogyAdapterTest < ActiveRecord::TrilogyTestCase
     assert_raises ArgumentError do
       ActiveRecord::ConnectionAdapters::TrilogyAdapter.new(prepared_statements: true).connect!
     end
-  end
-
-  # Create a temporary subscription to verify notification is sent.
-  # Optionally verify the notification payload includes expected types.
-  def assert_notification(notification, expected_payload = {}, &block)
-    notification_sent = false
-
-    subscription = lambda do |_, _, _, _, payload|
-      notification_sent = true
-
-      expected_payload.each do |key, value|
-        assert(
-          value === payload[key],
-          "Expected notification payload[:#{key}] to match #{value.inspect}, but got #{payload[key].inspect}."
-        )
-      end
-    end
-
-    ActiveSupport::Notifications.subscribed(subscription, notification) do
-      block.call if block_given?
-    end
-
-    assert notification_sent, "#{notification} notification was not sent"
-  end
-
-  # Create a temporary subscription to verify notification was not sent.
-  def assert_no_notification(notification, &block)
-    notification_sent = false
-
-    subscription = lambda do |*args|
-      notification_sent = true
-    end
-
-    ActiveSupport::Notifications.subscribed(subscription, notification) do
-      block.call if block_given?
-    end
-
-    assert_not notification_sent, "#{notification} notification was sent"
   end
 end

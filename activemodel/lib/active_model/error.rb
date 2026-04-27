@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "active_support/core_ext/class/attribute"
+require "active_support/inspect_backport"
 
 module ActiveModel
   # = Active \Model \Error
@@ -83,7 +83,7 @@ module ActiveModel
         defaults << :"#{i18n_scope}.errors.messages.#{type}"
 
         catch(:exception) do
-          translation = I18n.translate(defaults.first, **options.merge(default: defaults.drop(1), throw: true))
+          translation = I18n.translate(defaults.first, **options, default: defaults.drop(1), throw: true)
           return translation unless translation.nil?
         end unless options[:message]
       else
@@ -180,11 +180,11 @@ module ActiveModel
     # See if error matches provided +attribute+, +type+, and +options+ exactly.
     #
     # All params must be equal to Error's own attributes to be considered a
-    # strict match.
+    # strict match. Callback and message options are filtered from both sides.
     def strict_match?(attribute, type, **options)
       return false unless match?(attribute, type)
 
-      options == @options.except(*CALLBACKS_OPTIONS + MESSAGE_OPTIONS)
+      options.except(*CALLBACKS_OPTIONS + MESSAGE_OPTIONS) == @options.except(*CALLBACKS_OPTIONS + MESSAGE_OPTIONS)
     end
 
     def ==(other) # :nodoc:
@@ -196,13 +196,18 @@ module ActiveModel
       attributes_for_hash.hash
     end
 
-    def inspect # :nodoc:
-      "#<#{self.class.name} attribute=#{@attribute}, type=#{@type}, options=#{@options.inspect}>"
-    end
+    ActiveSupport::InspectBackport.apply(self)
+
+    private
+      def instance_variables_to_inspect
+        [:@attribute, :@type, :@options].freeze
+      end
 
     protected
       def attributes_for_hash
         [@base, @attribute, @raw_type, @options.except(*CALLBACKS_OPTIONS)]
       end
   end
+
+  ActiveSupport.run_load_hooks(:active_model_error, Error)
 end

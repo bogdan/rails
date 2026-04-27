@@ -73,7 +73,7 @@ module Rails
         def valid_type?(type)
           DEFAULT_TYPES.include?(type.to_s) ||
             !defined?(ActiveRecord::Base) ||
-            ActiveRecord::Base.lease_connection.valid_type?(type)
+            ActiveRecord::Base.connection_db_config.adapter_class.valid_type?(type)
         end
 
         def valid_index_type?(index_type)
@@ -230,7 +230,11 @@ module Rails
       end
 
       def inject_index_options
-        has_uniq_index? ? ", unique: true" : ""
+        if has_uniq_index? || token?
+          ", unique: true"
+        else
+          ""
+        end
       end
 
       def options_for_migration

@@ -8,7 +8,7 @@ require "models/car"
 require "models/aircraft"
 require "models/wheel"
 require "models/engine"
-require "models/tyre"
+require "models/tire"
 require "models/reply"
 require "models/category"
 require "models/categorization"
@@ -103,6 +103,15 @@ class CounterCacheTest < ActiveRecord::TestCase
     end
   end
 
+  test "reset counters for multiple records" do
+    t1, t2 = topics(:first, :second)
+    Topic.increment_counter(:replies_count, [t1.id, t2.id])
+
+    assert_difference ["t1.reload.replies_count", "t2.reload.replies_count"], -1 do
+      Topic.reset_counters([t1.id, t2.id], :replies_count)
+    end
+  end
+
   test "reset multiple counters" do
     Topic.update_counters @topic.id, replies_count: 1, unique_replies_count: 1
     assert_difference ["@topic.reload.replies_count", "@topic.reload.unique_replies_count"], -1 do
@@ -115,6 +124,15 @@ class CounterCacheTest < ActiveRecord::TestCase
 
     assert_difference "@topic.reload.replies_count", -1 do
       Topic.reset_counters(@topic.id, "replies")
+    end
+  end
+
+  test "reset counters with string id" do
+    assert @topic.replies_count > 0, "Must have replies"
+    Topic.increment_counter("replies_count", @topic.id)
+
+    assert_difference "@topic.reload.replies_count", -1 do
+      Topic.reset_counters(@topic.id.to_s, :replies)
     end
   end
 
@@ -164,10 +182,9 @@ class CounterCacheTest < ActiveRecord::TestCase
   test "reset counter performs query for correct counter with touch: true" do
     Topic.reset_counters(@topic.id, :replies_count)
 
-    # SELECT "topics".* FROM "topics" WHERE "topics"."id" = ? LIMIT ?
     # SELECT COUNT(*) FROM "topics" WHERE "topics"."type" IN (?, ?, ?, ?, ?) AND "topics"."parent_id" = ?
     # UPDATE "topics" SET "updated_at" = ? WHERE "topics"."id" = ?
-    assert_queries_count(3) do
+    assert_queries_count(2) do
       Topic.reset_counters(@topic.id, :replies_count, touch: true)
     end
   end
@@ -180,6 +197,19 @@ class CounterCacheTest < ActiveRecord::TestCase
     # check that it gets reset
     assert_difference -> { order.reload.books_count }, -1 do
       Cpk::Order.reset_counters(order.id, :books)
+    end
+  end
+
+  test "reset counters for cpk model with string ids" do
+    order = cpk_orders(:cpk_book_order_1)
+    assert order.books_count > 0, "Must have books"
+
+    Cpk::Order.increment_counter(:books_count, order.id)
+
+    # check that it gets reset
+    assert_difference -> { order.reload.books_count }, -1 do
+      string_id = order.id.map(&:to_s)
+      Cpk::Order.reset_counters(string_id, :books)
     end
   end
 
@@ -463,21 +493,21 @@ class CounterCacheTest < ActiveRecord::TestCase
 
   test "active counter cache" do
     car = Car.new
-    car.tyres = [Tyre.new, Tyre.new]
+    car.tires = [Tire.new, Tire.new]
     car.save!
 
-    assert_equal 2, car.custom_tyres_count
+    assert_equal 2, car.custom_tires_count
     car.reload
 
     assert_no_queries do
-      assert_equal 2, car.tyres.size
-      assert_not_predicate car.tyres, :empty?
-      assert_predicate car.tyres, :any?
-      assert_not_predicate car.tyres, :none?
+      assert_equal 2, car.tires.size
+      assert_not_predicate car.tires, :empty?
+      assert_predicate car.tires, :any?
+      assert_not_predicate car.tires, :none?
     end
 
     assert_queries_count(1) do
-      assert_equal 2, car.tyres.count
+      assert_equal 2, car.tires.count
     end
   end
 
