@@ -2,6 +2,7 @@
 
 require "cases/helper"
 require "concurrent/atomic/count_down_latch"
+require "timeout"
 
 module ActiveRecord
   module ConnectionAdapters
@@ -906,9 +907,11 @@ module ActiveRecord
 
         checkin.call(group1.size)         # should wake up all group1
 
-        loop do
-          sleep 0.1
-          break if mutex.synchronize { (successes.size + errors.size) == group1.size }
+        Timeout.timeout(5) do
+          loop do
+            sleep 0.1
+            break if mutex.synchronize { (successes.size + errors.size) == group1.size }
+          end
         end
 
         winners = mutex.synchronize { successes.dup }
