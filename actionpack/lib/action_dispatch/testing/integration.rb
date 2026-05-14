@@ -4,7 +4,7 @@
 
 require "stringio"
 require "uri"
-require "furi"
+require "active_support/url"
 require "rack/test"
 require "active_support/test_case"
 
@@ -238,11 +238,11 @@ module ActionDispatch
         headers ||= {}
 
         if query
-          path = Furi.parse(path, priority: :path).update(query: query).to_s
+          path = ActiveSupport::URL.parse(path, priority: :path).update(query: query).to_s
         end
 
         if path.include?("://")
-          location = Furi.parse(path)
+          location = ActiveSupport::URL.parse(path)
           https! location.https? if location.scheme
           host! location.hostinfo if location.host
           path = location.request!

@@ -1,9 +1,4 @@
 PATH
-  remote: ../../my/furi
-  specs:
-    furi (0.2.8)
-
-PATH
   remote: .
   specs:
     actioncable (8.2.0.alpha)
@@ -71,7 +66,6 @@ PATH
       concurrent-ruby (~> 1.0, >= 1.3.1)
       connection_pool (>= 2.2.5)
       drb
-      furi (~> 0.2.8)
       i18n (>= 1.6, < 2)
       json
       logger (>= 1.4.2)
@@ -698,7 +692,6 @@ DEPENDENCIES
   dalli
   dartsass-rails
   debug (>= 1.1.0)
-  furi!
   google-cloud-storage (~> 1.11)
   image_processing (~> 1.2)
   importmap-rails (>= 1.2.3)
@@ -833,7 +826,6 @@ CHECKSUMS
   ffi (1.17.1-x86_64-linux-gnu) sha256=8c0ade2a5d19f3672bccfe3b58e016ae5f159e3e2e741c856db87fcf07c903d0
   ffi-compiler (1.3.2) sha256=a94f3d81d12caf5c5d4ecf13980a70d0aeaa72268f3b9cc13358bcc6509184a0
   fugit (1.11.1) sha256=e89485e7be22226d8e9c6da411664d0660284b4b1c08cacb540f505907869868
-  furi (0.2.8)
   globalid (1.2.1) sha256=70bf76711871f843dbba72beb8613229a49429d1866828476f9c9d6ccc327ce9
   google-apis-core (0.15.1) sha256=91484122791af5b2f3d3f4297912748febe2b5d704d04ad54cbf5df87339a71a
   google-apis-iamcredentials_v1 (0.22.0) sha256=38c1de913d541802398841a124bb5592f1bae71119b5aede5369647eee7a3dad

@@ -2,7 +2,7 @@
 
 require "cgi/escape"
 require "cgi/util" if RUBY_VERSION < "3.5"
-require "furi"
+require "active_support/url"
 
 class Object
   # Alias of <tt>to_s</tt>.
@@ -84,7 +84,7 @@ class Hash
   # The string pairs "key=value" that conform the query string
   # are sorted lexicographically in ascending order.
   def to_query(namespace = nil)
-    Furi.serialize(
+    ActiveSupport::URL.serialize(
       self,
       namespace: namespace,
       sorted: true,

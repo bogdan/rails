@@ -3,7 +3,7 @@
 # :markup: markdown
 
 require "active_support/core_ext/module/attribute_accessors"
-require "furi"
+require "active_support/url"
 
 module ActionDispatch
   module Http
@@ -178,7 +178,7 @@ module ActionDispatch
 
           anchor = options[:anchor].to_param if options[:anchor]
 
-          Furi.build(path: path, query: params, anchor: anchor)
+          ActiveSupport::URL.build(path: path, query: params, anchor: anchor)
         end
 
         private
@@ -203,7 +203,7 @@ module ActionDispatch
 
             user, password = options[:user], options[:password]
             user_pw_set = user && password
-            Furi.build(
+            ActiveSupport::URL.build(
               scheme:   protocol,
               username: (user if user_pw_set),
               password: (password if user_pw_set),

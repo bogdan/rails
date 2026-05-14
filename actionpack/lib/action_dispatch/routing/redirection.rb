@@ -4,7 +4,7 @@
 
 require "active_support/core_ext/array/extract_options"
 require "rack/utils"
-require "furi"
+require "active_support/url"
 require "action_controller/metal/exceptions"
 require "action_dispatch/routing/endpoint"
 
@@ -37,7 +37,7 @@ module ActionDispatch
 
       def build_response(req)
         target = path(req.path_parameters, req).to_s
-        uri = target.empty? ? Furi::Uri.new({}) : Furi.parse(target, priority: :path)
+        uri = target.empty? ? ActiveSupport::URL::Uri.new({}) : ActiveSupport::URL.parse(target, priority: :path)
 
         unless uri.host
           if relative_path?(target)

@@ -2,7 +2,7 @@
 
 # :markup: markdown
 
-require "furi"
+require "active_support/url"
 
 module ActionDispatch
   # # Action Dispatch SSL
@@ -172,7 +172,7 @@ module ActionDispatch
       def https_location_for(request)
         host = @redirect[:host] || request.host
         port = @redirect[:port] || request.port
-        Furi.build(scheme: "https", host: host, port: (port unless port == 80), resource: request.fullpath)
+        ActiveSupport::URL.build(scheme: "https", host: host, port: (port unless port == 80), resource: request.fullpath)
       end
   end
 end

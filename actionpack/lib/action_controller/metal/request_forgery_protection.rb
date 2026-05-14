@@ -3,7 +3,7 @@
 # :markup: markdown
 
 require "rack/session/abstract/id"
-require "furi"
+require "active_support/url"
 require "action_controller/metal/exceptions"
 require "active_support/security_utils"
 
@@ -868,7 +868,7 @@ module ActionController # :nodoc:
       def normalize_action_path(action_path)
         return request.path.chomp("/") if action_path.blank?
 
-        uri = Furi.parse(action_path, priority: :path)
+        uri = ActiveSupport::URL.parse(action_path, priority: :path)
         if uri.relative? && !action_path.start_with?("/")
           rel_path = uri.path.delete_prefix("/")
           "#{request.path}/#{rel_path}".gsub("/./", "/").chomp("/")

@@ -2,7 +2,7 @@
 
 # :markup: markdown
 
-require "furi"
+require "active_support/url"
 
 module ActionDispatch
   module Http
@@ -37,14 +37,14 @@ module ActionDispatch
       end
 
       def parameter_filtered_location
-        uri = Furi.parse(location)
+        uri = ActiveSupport::URL.parse(location)
         return FILTERED unless uri.rfc3986?
         filter = request.parameter_filter
         uri.to_s(escape_query_param: ->(name, value) {
           filtered = filter.filter(name => value).first.last
           "#{CGI.escape(name)}=#{filtered}" unless filtered.equal?(value)
         })
-      rescue Furi::Error
+      rescue ActiveSupport::URL::Error
         FILTERED
       end
     end
