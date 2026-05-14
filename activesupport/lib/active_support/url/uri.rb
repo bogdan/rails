@@ -1,9 +1,9 @@
 require 'pathname'
 
-module Furi
+module ActiveSupport::URL
   class Uri
 
-    attr_reader(*(Furi::ESSENTIAL_PARTS - [:query_string]))
+    attr_reader(*(ActiveSupport::URL::ESSENTIAL_PARTS - [:query_string]))
 
     def query_string(escape_query_param: nil)
       if escape_query_param
@@ -11,7 +11,7 @@ module Furi
         return nil if tokens.empty?
         tokens.map { |t| escape_query_param.call(t.name, t.value) || t.to_s }.join("&")
       elsif @query
-        s = Furi.serialize(@query)
+        s = ActiveSupport::URL.serialize(@query)
         s.empty? ? nil : s
       elsif @query_string
         @query_string
@@ -24,15 +24,15 @@ module Furi
       if @query_tokens
         @query_tokens
       elsif @query
-        Furi.send(:serialize_tokens, @query)
+        ActiveSupport::URL.send(:serialize_tokens, @query)
       elsif @query_string
-        @query_tokens = Furi.query_tokens(@query_string)
+        @query_tokens = ActiveSupport::URL.query_tokens(@query_string)
       else
         []
       end
     end
 
-    Furi::ALIASES.each do |origin, aliases|
+    ActiveSupport::URL::ALIASES.each do |origin, aliases|
       aliases.each do |aliaz|
         define_method(aliaz) do
           self[origin]
@@ -92,7 +92,7 @@ module Furi
       parts.each do |part, value|
         case part.to_sym
         when :query, :query_tokens
-          Furi.parse_query(value).each do |key, default_value|
+          ActiveSupport::URL.parse_query(value).each do |key, default_value|
             unless query.key?(key)
               query[key] = default_value
             end
@@ -109,12 +109,12 @@ module Furi
     def merge_query(query)
       case query
       when Hash
-        self.query = Furi::Utils.deep_merge(
+        self.query = ActiveSupport::URL::Utils.deep_merge(
           self.query,
-          Furi::Utils.stringify_keys(query)
+          ActiveSupport::URL::Utils.stringify_keys(query)
         )
       when String, Array
-        self.query_tokens += Furi.query_tokens(query)
+        self.query_tokens += ActiveSupport::URL.query_tokens(query)
       when nil
       else
         raise QueryParseError, "#{query.inspect} can not be merged"
@@ -127,7 +127,7 @@ module Furi
         result += ":#{URI.encode_www_form_component(password)}" if password
         result
       elsif password
-        raise Furi::FormattingError, "can not build URI with password but without username"
+        raise ActiveSupport::URL::FormattingError, "can not build URI with password but without username"
       end
     end
 
@@ -177,7 +177,7 @@ module Furi
     def hostinfo
       return host unless custom_port?
       if port && !host
-        raise Furi::FormattingError, "can not build URI with port but without host"
+        raise ActiveSupport::URL::FormattingError, "can not build URI with port but without host"
       end
       [host, port].join(":")
     end
@@ -226,7 +226,7 @@ module Furi
     def location
       if protocol
         if !host && !mailto?
-          raise Furi::FormattingError, "can not build URI with protocol but without host"
+          raise ActiveSupport::URL::FormattingError, "can not build URI with protocol but without host"
         end
         [
           protocol.empty? ? "" : "#{protocol}:", authority
@@ -274,17 +274,17 @@ module Furi
     end
 
     def home_page?
-      path! == Furi::ROOT || path! == "/index.html"
+      path! == ActiveSupport::URL::ROOT || path! == "/index.html"
     end
 
     def query
-      @query ||= Furi.parse_query(query_tokens)
+      @query ||= ActiveSupport::URL.parse_query(query_tokens)
     end
 
     def query=(value)
       case value
       when true
-        @query ||= Furi.parse_query(query_tokens)
+        @query ||= ActiveSupport::URL.parse_query(query_tokens)
         @query_string = nil
         @query_tokens = nil
       when String, Array
@@ -304,7 +304,7 @@ module Furi
                   nil
                 else
                   unless port =~ /\A\s*\d+\s*\z/
-                    raise Furi::ParseError, "port should be an Integer >= 0, got: #{port.inspect}"
+                    raise ActiveSupport::URL::ParseError, "port should be an Integer >= 0, got: #{port.inspect}"
                   end
                   port.to_i
                 end
@@ -327,7 +327,7 @@ module Furi
         @query_tokens = nil
       else
         @query = nil
-        @query_tokens = Furi.query_tokens(tokens)
+        @query_tokens = ActiveSupport::URL.query_tokens(tokens)
       end
       @query_string = nil
     end
@@ -395,7 +395,7 @@ module Furi
       tokens = file_tokens
       case tokens.size
       when 0
-        raise Furi::FormattingError, "can not assign extension when there is no file"
+        raise ActiveSupport::URL::FormattingError, "can not assign extension when there is no file"
       when 1
         tokens.push(string)
       else
@@ -442,11 +442,11 @@ module Furi
     end
 
     def default_port
-      Furi::PROTOCOLS.fetch(protocol, {})[:port]
+      ActiveSupport::URL::PROTOCOLS.fetch(protocol, {})[:port]
     end
 
     def ssl?
-      !!(Furi::PROTOCOLS.fetch(protocol, {})[:ssl])
+      !!(ActiveSupport::URL::PROTOCOLS.fetch(protocol, {})[:ssl])
     end
 
     def ssl
@@ -467,13 +467,13 @@ module Furi
     end
 
     def default_web_port?
-      Furi::WEB_PROTOCOL.any? do |web_protocol|
-        Furi::PROTOCOLS[web_protocol][:port] == port!
+      ActiveSupport::URL::WEB_PROTOCOL.any? do |web_protocol|
+        ActiveSupport::URL::PROTOCOLS[web_protocol][:port] == port!
       end
     end
 
     def web_protocol?
-      Furi::WEB_PROTOCOL.include?(protocol)
+      ActiveSupport::URL::WEB_PROTOCOL.include?(protocol)
     end
 
     def https?
@@ -506,7 +506,7 @@ module Furi
     end
 
     def path!
-      path || Furi::ROOT
+      path || ActiveSupport::URL::ROOT
     end
 
     def resource!
@@ -576,7 +576,7 @@ module Furi
 
     def parse_uri_string(string)
       if string.empty?
-        raise Furi::FormattingError, "can not be an empty string"
+        raise ActiveSupport::URL::FormattingError, "can not be an empty string"
       end
       string = parse_anchor_and_query(string)
 
@@ -596,10 +596,10 @@ module Furi
     end
 
     def find_protocol_for_ssl(ssl)
-      if Furi::SSL_MAPPING.key?(protocol)
-        ssl ? Furi::SSL_MAPPING[protocol] : protocol
-      elsif Furi::SSL_MAPPING.values.include?(protocol)
-        ssl ? protocol : Furi::SSL_MAPPING.invert[protocol]
+      if ActiveSupport::URL::SSL_MAPPING.key?(protocol)
+        ssl ? ActiveSupport::URL::SSL_MAPPING[protocol] : protocol
+      elsif ActiveSupport::URL::SSL_MAPPING.values.include?(protocol)
+        ssl ? protocol : ActiveSupport::URL::SSL_MAPPING.invert[protocol]
       else
         raise ArgumentError, "Can not specify SSL for #{protocol.inspect} protocol"
       end

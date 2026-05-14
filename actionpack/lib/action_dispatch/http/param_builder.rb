@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "furi"
+require "active_support/url"
 
 module ActionDispatch
   class ParamBuilder
@@ -42,10 +42,10 @@ module ActionDispatch
     end
 
     def from_pairs(pairs, encoding_template: nil)
-      # Materialize as array-of-arrays so Furi.query_tokens handles correctly;
+      # Materialize as array-of-arrays so ActiveSupport::URL.query_tokens handles correctly;
       # Rack's each_pair yields two values separately, which confuses map { |t| }.
       pair_array = pairs.map { |k, v| [k, v] }
-      Furi::QueryParser.new(
+      ActiveSupport::URL::QueryParser.new(
         make_params: -> { ActiveSupport::HashWithIndifferentAccess.new },
         depth_limit: param_depth_limit,
         encoding_template: encoding_template,

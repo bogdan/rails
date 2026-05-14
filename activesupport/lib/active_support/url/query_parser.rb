@@ -1,4 +1,4 @@
-module Furi
+module ActiveSupport::URL
   class QueryParser
     def initialize(
       make_params: -> { {} },
@@ -15,10 +15,10 @@ module Furi
     end
 
     def parse(query)
-      return Furi::Utils.stringify_keys(query) if query.is_a?(Hash)
+      return ActiveSupport::URL::Utils.stringify_keys(query) if query.is_a?(Hash)
 
       params = @make_params.call
-      Furi.query_tokens(query).each do |token|
+      ActiveSupport::URL.query_tokens(query).each do |token|
         parse_token(params, token.name, coerce(token.value), 0)
       end
       params
@@ -33,7 +33,7 @@ module Furi
     end
 
     def parse_token(params, name, value, depth)
-      raise Furi::ParamsTooDeepError if depth >= @depth_limit
+      raise ActiveSupport::URL::ParamsTooDeepError if depth >= @depth_limit
 
       if depth == 0
         # At depth 0, use Rails-compatible splitting: find the first [ after
@@ -55,7 +55,7 @@ module Furi
       return if k.empty?
 
       unless k.valid_encoding?
-        raise Furi::InvalidParameterError, "Invalid encoding for parameter: #{k}"
+        raise ActiveSupport::URL::InvalidParameterError, "Invalid encoding for parameter: #{k}"
       end
 
       if depth == 0 && String === value
@@ -63,7 +63,7 @@ module Furi
           value.force_encoding(enc)
         end
         unless value.valid_encoding?
-          raise Furi::InvalidParameterError, "Invalid encoding for parameter: #{value.scrub}"
+          raise ActiveSupport::URL::InvalidParameterError, "Invalid encoding for parameter: #{value.scrub}"
         end
       end
 
@@ -73,14 +73,14 @@ module Furi
       elsif after == "[]"
         current ||= []
         unless current.is_a?(Array)
-          raise Furi::ParameterTypeError, "expected Array (got #{current.class}) for param `#{k}'"
+          raise ActiveSupport::URL::ParameterTypeError, "expected Array (got #{current.class}) for param `#{k}'"
         end
         current << value if value || !@deep_munge
       elsif after =~ %r(^\[\]\[([^\[\]]+)\]$) || after =~ %r(^\[\](.+)$)
         child_key = $1
         current ||= []
         unless current.is_a?(Array)
-          raise Furi::ParameterTypeError, "expected Array (got #{current.class}) for param `#{k}'"
+          raise ActiveSupport::URL::ParameterTypeError, "expected Array (got #{current.class}) for param `#{k}'"
         end
         if current.last.is_a?(Hash) && !current.last.key?(child_key)
           parse_token(current.last, child_key, value, depth + 1)
@@ -90,7 +90,7 @@ module Furi
       else
         current ||= @make_params.call
         unless current.is_a?(Hash)
-          raise Furi::ParameterTypeError, "expected Hash (got #{current.class}) for param `#{k}'"
+          raise ActiveSupport::URL::ParameterTypeError, "expected Hash (got #{current.class}) for param `#{k}'"
         end
         current = parse_token(current, after, value, depth + 1)
       end

@@ -11,7 +11,7 @@ module ActionDispatch
         defined?(Rack::Utils::ParameterTypeError) && Rack::Utils::ParameterTypeError === other ||
         defined?(Rack::Utils::InvalidParameterError) && Rack::Utils::InvalidParameterError === other ||
         defined?(Rack::QueryParser::ParamsTooDeepError) && Rack::QueryParser::ParamsTooDeepError === other ||
-        Furi::ParamError === other
+        ActiveSupport::URL::ParamError === other
       )
     end
   end

@@ -1,5 +1,5 @@
 
-module Furi
+module ActiveSupport::URL
   class Utils
     class << self
       def stringify_keys(hash)

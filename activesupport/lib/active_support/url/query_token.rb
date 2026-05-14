@@ -1,4 +1,4 @@
-module Furi
+module ActiveSupport::URL
   class QueryToken
     include Comparable
 
