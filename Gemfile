@@ -7,6 +7,7 @@ gem "minitest", "~> 6.0"
 gem "minitest-mock"
 
 gem "releaser", path: "tools/releaser"
+gem "furi", path: "~/makabu/my/furi"
 
 gem "sprockets-rails", ">= 2.0.0", require: false
 gem "propshaft", ">= 0.1.7", "!= 1.0.1"

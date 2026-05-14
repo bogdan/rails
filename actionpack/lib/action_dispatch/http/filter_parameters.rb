@@ -3,6 +3,7 @@
 # :markup: markdown
 
 require "active_support/parameter_filter"
+require "furi"
 
 module ActionDispatch
   module Http
@@ -71,16 +72,12 @@ module ActionDispatch
       end
 
       def filtered_query_string # :doc:
-        parts = query_string.split(/([&;])/)
-        filtered_parts = parts.map do |part|
-          if part.include?("=")
-            key, value = part.split("=", 2)
-            parameter_filter.filter(key => value).first.join("=")
-          else
-            part
-          end
-        end
-        filtered_parts.join("")
+        sep = query_string.include?("&") ? "&" : ";"
+        Furi.query_tokens(query_string).map { |token|
+          next token.to_s if token.value.nil?
+          filtered = parameter_filter.filter(token.name => token.value).first.last
+          filtered.equal?(token.value) ? token.to_s : "#{URI.encode_www_form_component(token.name)}=#{filtered}"
+        }.join(sep)
       end
     end
   end

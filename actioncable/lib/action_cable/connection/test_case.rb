@@ -8,6 +8,7 @@ require "active_support/core_ext/hash/indifferent_access"
 require "action_dispatch"
 require "action_dispatch/http/headers"
 require "action_dispatch/testing/test_request"
+require "furi"
 
 module ActionCable
   module Connection
@@ -217,9 +218,9 @@ module ActionCable
           def build_test_request(path, params: nil, headers: {}, session: {}, env: {})
             wrapped_headers = ActionDispatch::Http::Headers.from_hash(headers)
 
-            uri = URI.parse(path)
+            uri = Furi.parse(path)
 
-            query_string = params.nil? ? uri.query : params.to_query
+            query_string = params.nil? ? uri.query_string : params.to_query
 
             request_env = {
               "QUERY_STRING" => query_string,

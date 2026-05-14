@@ -3,6 +3,7 @@
 # :markup: markdown
 
 require "uri"
+require "furi"
 require "active_support/core_ext/hash/indifferent_access"
 require "active_support/core_ext/string/access"
 require "active_support/core_ext/module/redefine_method"
@@ -215,9 +216,8 @@ module ActionDispatch
       #     assert_generates "changesets/12", { controller: 'scm', action: 'show_diff', revision: "12" }
       def assert_generates(expected_path, options, defaults = {}, extras = {}, message = nil)
         if expected_path.include?("://")
-          fail_on(URI::InvalidURIError, message) do
-            uri = URI.parse(expected_path)
-            expected_path = uri.path.to_s.empty? ? "/" : uri.path
+          fail_on(URI::InvalidURIError, Furi::Error, message) do
+            expected_path = Furi.parse(expected_path).path!
           end
         else
           expected_path = "/#{expected_path}" unless expected_path.start_with?("/")
@@ -314,12 +314,12 @@ module ActionDispatch
           request = ActionController::TestRequest.create controller&.class
 
           if path.include?("://")
-            fail_on(URI::InvalidURIError, msg) do
-              uri = URI.parse(path)
+            fail_on(URI::InvalidURIError, Furi::Error, msg) do
+              uri = Furi.parse(path)
               request.env["rack.url_scheme"] = uri.scheme || "http"
               request.host = uri.host if uri.host
               request.port = uri.port if uri.port
-              request.path = uri.path.to_s.empty? ? "/" : uri.path
+              request.path = uri.path!
             end
           else
             path = "/#{path}" unless path.start_with?("/")
@@ -336,9 +336,9 @@ module ActionDispatch
           request
         end
 
-        def fail_on(exception_class, message)
+        def fail_on(*exception_classes, message)
           yield
-        rescue exception_class => e
+        rescue *exception_classes => e
           flunk(message || e.message)
         end
     end

@@ -10,7 +10,8 @@ module ActionDispatch
       super || (
         defined?(Rack::Utils::ParameterTypeError) && Rack::Utils::ParameterTypeError === other ||
         defined?(Rack::Utils::InvalidParameterError) && Rack::Utils::InvalidParameterError === other ||
-        defined?(Rack::QueryParser::ParamsTooDeepError) && Rack::QueryParser::ParamsTooDeepError === other
+        defined?(Rack::QueryParser::ParamsTooDeepError) && Rack::QueryParser::ParamsTooDeepError === other ||
+        Furi::ParamError === other
       )
     end
   end

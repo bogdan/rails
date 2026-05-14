@@ -3,6 +3,7 @@
 # :markup: markdown
 
 require "rack/session/abstract/id"
+require "furi"
 require "action_controller/metal/exceptions"
 require "active_support/security_utils"
 
@@ -865,23 +866,15 @@ module ActionController # :nodoc:
       end
 
       def normalize_action_path(action_path)
-        uri = URI.parse(action_path)
+        return request.path.chomp("/") if action_path.blank?
 
-        if uri.relative? && (action_path.blank? || !action_path.start_with?("/"))
-          normalize_relative_action_path(uri.path)
+        uri = Furi.parse(action_path, priority: :path)
+        if uri.relative? && !action_path.start_with?("/")
+          rel_path = uri.path.delete_prefix("/")
+          "#{request.path}/#{rel_path}".gsub("/./", "/").chomp("/")
         else
           uri.path.chomp("/")
         end
-      end
-
-      def normalize_relative_action_path(rel_action_path)
-        uri = URI.parse(request.path)
-        # add the action path to the request.path
-        uri.path += "/#{rel_action_path}"
-        # relative path with "./path"
-        uri.path.gsub!("/./", "/")
-
-        uri.path.chomp("/")
       end
 
       def generate_csrf_token

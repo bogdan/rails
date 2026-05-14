@@ -4,6 +4,7 @@
 
 require "active_support/core_ext/array/extract_options"
 require "rack/utils"
+require "furi"
 require "action_controller/metal/exceptions"
 require "action_dispatch/routing/endpoint"
 
@@ -35,12 +36,13 @@ module ActionDispatch
       end
 
       def build_response(req)
-        uri = URI.parse(path(req.path_parameters, req))
+        target = path(req.path_parameters, req).to_s
+        uri = target.empty? ? Furi::Uri.new({}) : Furi.parse(target, priority: :path)
 
         unless uri.host
-          if relative_path?(uri.path)
-            uri.path = "#{req.script_name}/#{uri.path}"
-          elsif uri.path.empty?
+          if relative_path?(target)
+            uri.path = "#{req.script_name}/#{target}"
+          elsif uri.path.nil? || uri.path.empty?
             uri.path = req.script_name.empty? ? "/" : req.script_name
           end
         end

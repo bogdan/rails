@@ -4,6 +4,7 @@
 
 require "stringio"
 require "uri"
+require "furi"
 require "rack/test"
 require "active_support/test_case"
 
@@ -237,20 +238,14 @@ module ActionDispatch
         headers ||= {}
 
         if query
-          query_string = query.is_a?(String) ? query : Rack::Utils.build_nested_query(query)
-          path = path.include?("?") ? "#{path}&#{query_string}" : "#{path}?#{query_string}"
+          path = Furi.parse(path, priority: :path).update(query: query).to_s
         end
 
         if path.include?("://")
-          path = build_expanded_path(path) do |location|
-            https! URI::HTTPS === location if location.scheme
-
-            if url_host = location.host
-              default = Rack::Request::DEFAULT_PORTS[location.scheme]
-              url_host += ":#{location.port}" if default != location.port
-              host! url_host
-            end
-          end
+          location = Furi.parse(path)
+          https! location.https? if location.scheme
+          host! location.hostinfo if location.host
+          path = location.request!
         end
 
         hostname, port = host.split(":")
@@ -336,12 +331,6 @@ module ActionDispatch
           "#{env['rack.url_scheme']}://#{env['SERVER_NAME']}:#{env['SERVER_PORT']}#{path}"
         end
 
-        def build_expanded_path(path)
-          location = URI.parse(path)
-          yield location if block_given?
-          path = location.path
-          location.query ? "#{path}?#{location.query}" : path
-        end
     end
 
     module Runner

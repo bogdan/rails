@@ -37,6 +37,10 @@ class ACLogSubscriberTest < ActionController::TestCase
         redirect_to "http://secret.foo.bar?username=repinel&password=1234"
       end
 
+      def filterable_redirector_with_encoded_param_key
+        redirect_to "http://secret.foo.bar?my%20password=secret&user=joe"
+      end
+
       def filterable_redirector_bad_uri
         redirect_to " s:/invalid-string0uri"
       end
@@ -281,6 +285,14 @@ class ACLogSubscriberTest < ActionController::TestCase
 
     assert_equal 3, logs.size
     assert_equal "Redirected to http://secret.foo.bar?username=repinel&password=[FILTERED]", logs[1]
+  end
+
+  def test_filter_redirect_preserves_encoded_param_keys
+    @request.env["action_dispatch.parameter_filter"] = [/password/]
+    get :filterable_redirector_with_encoded_param_key
+
+    assert_equal 3, logs.size
+    assert_equal "Redirected to http://secret.foo.bar?my+password=[FILTERED]&user=joe", logs[1]
   end
 
   def test_filter_redirect_bad_uri

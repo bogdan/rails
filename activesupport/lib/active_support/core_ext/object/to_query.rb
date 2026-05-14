@@ -2,6 +2,7 @@
 
 require "cgi/escape"
 require "cgi/util" if RUBY_VERSION < "3.5"
+require "furi"
 
 class Object
   # Alias of <tt>to_s</tt>.
@@ -65,6 +66,10 @@ class Array
 end
 
 class Hash
+  AS_HASH_FOR_QUERY = ->(value) { # :nodoc:
+    value.to_unsafe_h if value.respond_to?(:to_unsafe_h)
+  }
+
   # Returns a string representation of the receiver suitable for use as a URL
   # query string:
   #
@@ -79,14 +84,12 @@ class Hash
   # The string pairs "key=value" that conform the query string
   # are sorted lexicographically in ascending order.
   def to_query(namespace = nil)
-    query = filter_map do |key, value|
-      unless (value.is_a?(Hash) || value.is_a?(Array)) && value.empty?
-        value.to_query(namespace ? "#{namespace}[#{key}]" : key)
-      end
-    end
-
-    query.sort! unless namespace.to_s.include?("[]")
-    query.join("&")
+    Furi.serialize(
+      self,
+      namespace: namespace,
+      sorted: true,
+      as_hash: AS_HASH_FOR_QUERY,
+    )
   end
 
   alias_method :to_param, :to_query

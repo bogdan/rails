@@ -2,6 +2,8 @@
 
 # :markup: markdown
 
+require "furi"
+
 module ActionDispatch
   module Http
     module FilterRedirect
@@ -35,21 +37,14 @@ module ActionDispatch
       end
 
       def parameter_filtered_location
-        uri = URI.parse(location)
-        unless uri.query.nil? || uri.query.empty?
-          parts = uri.query.split(/([&;])/)
-          filtered_parts = parts.map do |part|
-            if part.include?("=")
-              key, value = part.split("=", 2)
-              request.parameter_filter.filter(key => value).first.join("=")
-            else
-              part
-            end
-          end
-          uri.query = filtered_parts.join("")
-        end
-        uri.to_s
-      rescue URI::Error
+        uri = Furi.parse(location)
+        return FILTERED unless uri.rfc3986?
+        filter = request.parameter_filter
+        uri.to_s(escape_query_param: ->(name, value) {
+          filtered = filter.filter(name => value).first.last
+          "#{CGI.escape(name)}=#{filtered}" unless filtered.equal?(value)
+        })
+      rescue Furi::Error
         FILTERED
       end
     end

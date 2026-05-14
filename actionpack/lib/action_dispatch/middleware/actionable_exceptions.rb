@@ -3,6 +3,7 @@
 # :markup: markdown
 
 require "uri"
+require "furi"
 require "active_support/actionable_error"
 
 module ActionDispatch
@@ -28,19 +29,19 @@ module ActionDispatch
       end
 
       def redirect_to(location)
-        uri = URI.parse location
-
-        if uri.relative? || uri.scheme == "http" || uri.scheme == "https"
-          body = ""
-        else
+        uri = Furi.parse(location)
+        unless uri.relative? || uri.http? || uri.https?
           return [400, { Rack::CONTENT_TYPE => "text/plain; charset=utf-8" }, ["Invalid redirection URI"]]
         end
 
+        body = ""
         [302, {
           Rack::CONTENT_TYPE => "text/html; charset=#{Response.default_charset}",
           Rack::CONTENT_LENGTH => body.bytesize.to_s,
           ActionDispatch::Constants::LOCATION => location,
         }, [body]]
+      rescue Furi::Error
+        [400, { Rack::CONTENT_TYPE => "text/plain; charset=utf-8" }, ["Invalid redirection URI"]]
       end
   end
 end

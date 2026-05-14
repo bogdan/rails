@@ -3,6 +3,7 @@
 # :markup: markdown
 
 require "active_support/core_ext/module/attribute_accessors"
+require "furi"
 
 module ActionDispatch
   module Http
@@ -169,29 +170,18 @@ module ActionDispatch
         def path_for(options)
           path = options[:script_name].to_s.chomp("/")
           path << options[:path] if options.key?(:path)
-
           path = "/" if options[:trailing_slash] && path.blank?
 
-          add_params(path, options[:params]) if options.key?(:params)
-          add_anchor(path, options[:anchor]) if options.key?(:anchor)
+          params = options[:params] if options.key?(:params)
+          params = { params: params } unless params.nil? || params.is_a?(Hash)
+          params&.reject! { |_, v| v.to_param.nil? }
 
-          path
+          anchor = options[:anchor].to_param if options[:anchor]
+
+          Furi.build(path: path, query: params, anchor: anchor)
         end
 
         private
-          def add_params(path, params)
-            params = { params: params } unless params.is_a?(Hash)
-            params.reject! { |_, v| v.to_param.nil? }
-            query = params.to_query
-            path << "?#{query}" unless query.empty?
-          end
-
-          def add_anchor(path, anchor)
-            if anchor
-              path << "##{Journey::Router::Utils.escape_fragment(anchor.to_param)}"
-            end
-          end
-
           def extract_domain_from(host, tld_length)
             domain_extractor.domain_from(host, tld_length)
           end
@@ -202,26 +192,25 @@ module ActionDispatch
 
           def build_host_url(host, port, protocol, options, path)
             if match = host.match(HOST_REGEXP)
-              protocol_from_host = match[1] if protocol.nil?
+              protocol_from_host = match[1]&.chomp("://") if protocol.nil?
               host               = match[2]
               port               = match[3] unless options.key? :port
             end
 
-            protocol = protocol_from_host || normalize_protocol(protocol).dup
+            protocol = protocol_from_host || normalize_protocol(protocol)
             host     = normalize_host(host, options)
-            port     = normalize_port(port, protocol)
+            port     = nil if port == false
 
-            result = protocol
-
-            if options[:user] && options[:password]
-              result << "#{Rack::Utils.escape(options[:user])}:#{Rack::Utils.escape(options[:password])}@"
-            end
-
-            result << host
-
-            result << ":" << port.to_s if port
-
-            result.concat path
+            user, password = options[:user], options[:password]
+            user_pw_set = user && password
+            Furi.build(
+              scheme:   protocol,
+              username: (user if user_pw_set),
+              password: (password if user_pw_set),
+              host:     host,
+              port:     port,
+              resource: path,
+            )
           end
 
           def named_host?(host)
@@ -231,11 +220,11 @@ module ActionDispatch
           def normalize_protocol(protocol)
             case protocol
             when nil
-              secure_protocol ? "https://" : "http://"
+              secure_protocol ? "https" : "http"
             when false, "//"
-              "//"
+              ""
             when PROTOCOL_REGEXP
-              "#{$1}://"
+              $1
             else
               raise ArgumentError, "Invalid :protocol option: #{protocol.inspect}"
             end
@@ -261,17 +250,6 @@ module ActionDispatch
             host
           end
 
-          def normalize_port(port, protocol)
-            return unless port
-
-            case protocol
-            when "//" then port
-            when "https://"
-              port unless port.to_i == 443
-            else
-              port unless port.to_i == 80
-            end
-          end
       end
 
       def initialize
