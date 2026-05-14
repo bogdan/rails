@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "active_support/url"
-
 module ActionDispatch
   class ParamBuilder
     def self.make_default(param_depth_limit)

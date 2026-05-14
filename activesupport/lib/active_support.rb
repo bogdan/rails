@@ -94,6 +94,7 @@ module ActiveSupport
   autoload :Rescuable
   autoload :SafeBuffer, "active_support/core_ext/string/output_safety"
   autoload :TestCase
+  autoload :URL
 
   def self.eager_load!
     super
