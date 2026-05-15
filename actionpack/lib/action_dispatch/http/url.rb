@@ -188,7 +188,7 @@ module ActionDispatch
             params = { params: params } unless params.nil? || params.is_a?(Hash)
             params&.reject! { |_, v| v.to_param.nil? }
 
-            anchor = options[:anchor].to_param if options[:anchor]
+            anchor = options[:anchor]
 
             { path: path, query: params, anchor: anchor }
           end

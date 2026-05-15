@@ -525,8 +525,8 @@ module ActiveSupport::URL
       "#<#{self.class} #{to_s.inspect}>"
     end
 
-    def anchor=(string)
-      string = string.to_s
+    def anchor=(value)
+      string = value ? (value.respond_to?(:to_param) ? value.to_param : value).to_s : ""
       @anchor = string.empty? ? nil : string
     end
 
