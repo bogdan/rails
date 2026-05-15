@@ -64,25 +64,29 @@ module ActiveSupport::URL
 
   ROOT = '/'
 
-  # Parses a URI string and returns a ActiveSupport::URL::Uri object.
+  # Parses a URI string and returns an ActiveSupport::URL::Uri object.
   #
-  # @param argument [String] the URI string to parse
-  # @param parts [Hash, nil] optional parts to merge into the parsed URI
-  # @param priority [:host, :path] controls how a protocol-less string is interpreted.
-  #   When the URI has no protocol, the segment before the first +/+ is ambiguous.
-  #   - +:host+ (default) treats it as the host:
-  #       ActiveSupport::URL.parse("gusiev.com/articles")
-  #       # host: "gusiev.com", path: "/articles"
-  #   - +:path+ treats the entire string as a path:
-  #       ActiveSupport::URL.parse("gusiev.com/articles", priority: :path)
-  #       # host: nil, path: "/gusiev.com/articles"
-  #   URLs with an explicit protocol are unaffected by this option.
-  # @return [ActiveSupport::URL::Uri]
+  # The optional +parts+ hash is merged into the parsed result.
+  #
+  # The +priority+ keyword controls how a protocol-less string is interpreted
+  # when the first segment contains no slash:
+  #
+  # * +:host+ (default) — treats the segment before the first +/+ as the host:
+  #
+  #     ActiveSupport::URL.parse("gusiev.com/articles")
+  #     # host: "gusiev.com", path: "/articles"
+  #
+  # * +:path+ — treats the entire string as a path:
+  #
+  #     ActiveSupport::URL.parse("gusiev.com/articles", priority: :path)
+  #     # host: nil, path: "/gusiev.com/articles"
+  #
+  # URLs with an explicit protocol are unaffected by +priority+.
   def self.parse(argument, parts: nil, priority: :host)
     Uri.new(argument, priority: priority).update(parts)
   end
 
-  # Builds an URL from given parts
+  # Builds a URL string from a hash of +parts+.
   #
   #   ActiveSupport::URL.build(path: "/dashboard", host: 'example.com', protocol: "https")
   #     # => "https://example.com/dashboard"
@@ -98,7 +102,7 @@ module ActiveSupport::URL
     end
   end
 
-  # Replaces a given URL string with given parts
+  # Returns +string+ with the given +parts+ merged in.
   #
   #   ActiveSupport::URL.update("http://gusiev.com", protocol: 'https', subdomain: 'www')
   #     # => "https://www.gusiev.com"
@@ -109,7 +113,7 @@ module ActiveSupport::URL
     alias :merge :update
   end
 
-  # Puts the default values for given URL that are not defined
+  # Returns +string+ with +parts+ applied only for keys not already set.
   #
   #   ActiveSupport::URL.defaults("gusiev.com/hello.html", protocol: 'http', path: '/index.html')
   #     # => "http://gusiev.com/hello.html"
@@ -117,9 +121,7 @@ module ActiveSupport::URL
     parse(string).defaults(parts).to_s
   end
 
-  # Replaces a given URL string with given parts.
-  # Same as update but works different for URL query parameter:
-  # replaces newly specified parameters instead of merging to existing ones
+  # Like #update, but replaces query parameters instead of merging them.
   #
   #   ActiveSupport::URL.update("/hello.html?a=1", host: 'gusiev.com', query: {b: 2})
   #     # => "gusiev.com/hello.html?a=1&b=2"
@@ -130,19 +132,18 @@ module ActiveSupport::URL
 
 
 
-  # Parses a query into nested paramters hash using a rack convension with square brackets.
+  # Parses a query string into a nested parameters hash using the Rack
+  # square-bracket convention.
   #
-  #   ActiveSupport::URL.parse_query("a[]=1&a[]=2")       # => {a: [1,2]}
-  #   ActiveSupport::URL.parse_query("p[email]=a&a[two]=2") # => {a: {one: 1, two: 2}}
-  #   ActiveSupport::URL.parse_query("p[one]=1&a[two]=2") # => {a: {one: 1, two: 2}}
-  #   ActiveSupport::URL.serialize({p: {name: 'Bogdan Gusiev', email: 'bogdan@example.com', data: {one: 1, two: 2}}})
-  #     # => "p%5Bname%5D=Bogdan&p%5Bemail%5D=bogdan%40example.com&p%5Bdata%5D%5Bone%5D=1&p%5Bdata%5D%5Btwo%5D=2"
+  #   ActiveSupport::URL.parse_query("a[]=1&a[]=2")         # => {"a" => ["1", "2"]}
+  #   ActiveSupport::URL.parse_query("p[email]=a&p[two]=2") # => {"p" => {"email" => "a", "two" => "2"}}
+  #   ActiveSupport::URL.parse_query("p[one]=1&a[two]=2")   # => {"p" => {"one" => "1"}, "a" => {"two" => "2"}}
   def self.parse_query(query)
     QueryParser.new.parse(query)
   end
 
-  # Parses query key/value pairs from query string and returns them raw
-  # without organising them into hashes and without normalising them.
+  # Parses query key/value pairs from a query string and returns them raw,
+  # without organizing them into hashes or normalizing values.
   #
   #   ActiveSupport::URL.query_tokens("a=1&b=2").map {|k,v| "#{k} -> #{v}"}  # => ['a -> 1', 'b -> 2']
   #   ActiveSupport::URL.query_tokens("a=1&a=1&a=2").map {|k,v| "#{k} -> #{v}"}  # => ['a -> 1', 'a -> 1', 'a -> 2']
@@ -165,8 +166,8 @@ module ActiveSupport::URL
     end
   end
 
-  # Serializes query parameters into query string.
-  # Optionaly accepts a basic name space.
+  # Serializes query parameters into a query string.
+  # Optionally accepts a +namespace+ to nest all keys under.
   #
   #   ActiveSupport::URL.serialize({a: 1, b: 2}) # => "a=1&b=2"
   #   ActiveSupport::URL.serialize({a: [1,2]}) # => "a[]=1&a[]=2"
