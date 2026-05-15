@@ -156,61 +156,49 @@ module ActionDispatch
         end
 
         def full_url_for(options)
-          host     = options[:host]
-          protocol = options[:protocol]
-          port     = options[:port]
-
-          unless host
+          unless options[:host]
             raise ArgumentError, "Missing host to link to! Please provide the :host parameter, set default_url_options[:host], or set :only_path to true"
           end
 
-          build_host_url(host, port, protocol, options, path_for(options))
+          uri          = ActiveSupport::URL.parse(options[:host])
+          uri.protocol = normalize_protocol(options[:protocol].nil? ? uri.protocol : options[:protocol])
+          uri.host     = normalize_host(uri.host, options)
+          uri.port     = options[:port] == false ? nil : options[:port] if options.key?(:port)
+
+          user, password = options[:user], options[:password]
+          if user && password
+            uri.username = user
+            uri.password = password
+          end
+
+          uri.replace(path_url_parts(options)).to_s
         end
 
         def path_for(options)
-          path = options[:script_name].to_s.chomp("/")
-          path << options[:path] if options.key?(:path)
-          path = "/" if options[:trailing_slash] && path.blank?
-
-          params = options[:params] if options.key?(:params)
-          params = { params: params } unless params.nil? || params.is_a?(Hash)
-          params&.reject! { |_, v| v.to_param.nil? }
-
-          anchor = options[:anchor].to_param if options[:anchor]
-
-          ActiveSupport::URL.build(path: path, query: params, anchor: anchor)
+          ActiveSupport::URL.build(**path_url_parts(options))
         end
 
         private
+          def path_url_parts(options)
+            path = options[:script_name].to_s.chomp("/")
+            path << options[:path] if options.key?(:path)
+            path = "/" if options[:trailing_slash] && path.blank?
+
+            params = options[:params] if options.key?(:params)
+            params = { params: params } unless params.nil? || params.is_a?(Hash)
+            params&.reject! { |_, v| v.to_param.nil? }
+
+            anchor = options[:anchor].to_param if options[:anchor]
+
+            { path: path, query: params, anchor: anchor }
+          end
+
           def extract_domain_from(host, tld_length)
             domain_extractor.domain_from(host, tld_length)
           end
 
           def extract_subdomains_from(host, tld_length)
             domain_extractor.subdomains_from(host, tld_length)
-          end
-
-          def build_host_url(host, port, protocol, options, path)
-            if match = host.match(HOST_REGEXP)
-              protocol_from_host = match[1]&.chomp("://") if protocol.nil?
-              host               = match[2]
-              port               = match[3] unless options.key? :port
-            end
-
-            protocol = protocol_from_host || normalize_protocol(protocol)
-            host     = normalize_host(host, options)
-            port     = nil if port == false
-
-            user, password = options[:user], options[:password]
-            user_pw_set = user && password
-            ActiveSupport::URL.build(
-              scheme:   protocol,
-              username: (user if user_pw_set),
-              password: (password if user_pw_set),
-              host:     host,
-              port:     port,
-              resource: path,
-            )
           end
 
           def named_host?(host)
@@ -221,7 +209,7 @@ module ActionDispatch
             case protocol
             when nil
               secure_protocol ? "https" : "http"
-            when false, "//"
+            when false, "//", ""
               ""
             when PROTOCOL_REGEXP
               $1
