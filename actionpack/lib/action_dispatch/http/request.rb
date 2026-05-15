@@ -450,7 +450,7 @@ module ActionDispatch
         form_pairs
       elsif form_vars = get_header("rack.request.form_vars")
         # URL-encoded
-        ActionDispatch::QueryParser.each_pair(form_vars)
+        ActiveSupport::URL.query_tokens(form_vars)
       elsif rack_post && !rack_post.empty?
         # It was multipart, but Rack did not preserve a pair list
         # (probably too old). Flat parameter list is not available.

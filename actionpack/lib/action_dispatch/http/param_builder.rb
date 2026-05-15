@@ -36,20 +36,25 @@ module ActionDispatch
     end
 
     def from_query_string(qs, separator: nil, encoding_template: nil)
-      from_pairs QueryParser.each_pair(qs, separator), encoding_template: encoding_template
-    end
-
-    def from_pairs(pairs, encoding_template: nil)
-      # Materialize as array-of-arrays so ActiveSupport::URL.query_tokens handles correctly;
-      # Rack's each_pair yields two values separately, which confuses map { |t| }.
-      pair_array = pairs.map { |k, v| [k, v] }
       ActiveSupport::URL::QueryParser.new(
         make_params: -> { ActiveSupport::HashWithIndifferentAccess.new },
         depth_limit: param_depth_limit,
         encoding_template: encoding_template,
         coerce_value: ->(v) { ActionDispatch::Http::UploadedFile.new(v) if Hash === v },
         deep_munge: ActionDispatch::Request::Utils.perform_deep_munge
-      ).parse(pair_array)
+      ).parse(qs)
+    rescue ArgumentError => e
+      raise InvalidParameterError, e.message, e.backtrace
+    end
+
+    def from_pairs(pairs, encoding_template: nil)
+      ActiveSupport::URL::QueryParser.new(
+        make_params: -> { ActiveSupport::HashWithIndifferentAccess.new },
+        depth_limit: param_depth_limit,
+        encoding_template: encoding_template,
+        coerce_value: ->(v) { ActionDispatch::Http::UploadedFile.new(v) if Hash === v },
+        deep_munge: ActionDispatch::Request::Utils.perform_deep_munge
+      ).parse(pairs)
     rescue ArgumentError => e
       raise InvalidParameterError, e.message, e.backtrace
     end

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
-require "uri"
-require "rack"
+require "active_support/url"
 
 module ActionDispatch
   class QueryParser
@@ -40,13 +39,8 @@ module ActionDispatch
 
       s.split(splitter).each do |part|
         next if part.empty?
-
-        k, v = part.split("=", 2)
-
-        k = URI.decode_www_form_component(k)
-        v &&= URI.decode_www_form_component(v)
-
-        yield k, v
+        token = ActiveSupport::URL::QueryToken.parse(part)
+        yield token.name, token.value
       end
 
       nil
