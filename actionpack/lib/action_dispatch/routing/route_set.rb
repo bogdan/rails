@@ -438,15 +438,15 @@ module ActionDispatch
       def default_env
         if default_url_options != @default_env&.[]("action_dispatch.routes.default_url_options")
           url_options = default_url_options.dup.freeze
-          uri = URI(ActionDispatch::Http::URL.full_url_for(host: "example.org", **url_options))
+          uri = ActionDispatch::Http::URL.send(:build_full_uri, host: "example.org", **url_options)
 
           @default_env = {
             "action_dispatch.routes" => self,
             "action_dispatch.routes.default_url_options" => url_options,
-            "HTTPS" => uri.scheme == "https" ? "on" : "off",
-            "rack.url_scheme" => uri.scheme,
-            "HTTP_HOST" => uri.port == uri.default_port ? uri.host : "#{uri.host}:#{uri.port}",
-            "SCRIPT_NAME" => uri.path.chomp("/"),
+            "HTTPS" => uri.https? ? "on" : "off",
+            "rack.url_scheme" => uri.protocol,
+            "HTTP_HOST" => uri.hostinfo,
+            "SCRIPT_NAME" => uri.path.to_s.chomp("/"),
             "rack.input" => "",
           }.freeze
         end

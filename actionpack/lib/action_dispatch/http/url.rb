@@ -156,22 +156,7 @@ module ActionDispatch
         end
 
         def full_url_for(options)
-          unless options[:host]
-            raise ArgumentError, "Missing host to link to! Please provide the :host parameter, set default_url_options[:host], or set :only_path to true"
-          end
-
-          uri          = ActiveSupport::URL.parse(options[:host])
-          uri.protocol = normalize_protocol(options[:protocol].nil? ? uri.protocol : options[:protocol])
-          uri.host     = normalize_host(uri.host, options)
-          uri.port     = options[:port] == false ? nil : options[:port] if options.key?(:port)
-
-          user, password = options[:user], options[:password]
-          if user && password
-            uri.username = user
-            uri.password = password
-          end
-
-          uri.replace(path_url_parts(options)).to_s
+          build_full_uri(options).to_s
         end
 
         def path_for(options)
@@ -179,6 +164,25 @@ module ActionDispatch
         end
 
         private
+          def build_full_uri(options)
+            unless options[:host]
+              raise ArgumentError, "Missing host to link to! Please provide the :host parameter, set default_url_options[:host], or set :only_path to true"
+            end
+
+            uri          = ActiveSupport::URL.parse(options[:host])
+            uri.protocol = normalize_protocol(options[:protocol].nil? ? uri.protocol : options[:protocol])
+            uri.host     = normalize_host(uri.host, options)
+            uri.port     = options[:port] == false ? nil : options[:port] if options.key?(:port)
+
+            user, password = options[:user], options[:password]
+            if user && password
+              uri.username = user
+              uri.password = password
+            end
+
+            uri.replace(path_url_parts(options))
+          end
+
           def path_url_parts(options)
             path = options[:script_name].to_s.chomp("/")
             path << options[:path] if options.key?(:path)
