@@ -820,14 +820,14 @@ module ActionDispatch
       end
 
       def generate_extras(options, recall = {})
-        if recall
-          options = options.merge(_recall: recall)
-        end
-
+        options = options.dup
         route_name = options.delete :use_route
-        generator = generate(route_name, options, recall)
-        path_info = path_for(options, route_name, [])
-        [URI(path_info).path, generator.params.except(:_recall).keys]
+        route_with_params = generate(route_name, options, recall)
+
+        path = route_with_params.path(nil)
+        path += "/" if options[:trailing_slash] && !options[:format] && !path.end_with?("/")
+
+        [path, route_with_params.params.except(:_recall).keys]
       end
 
       def generate(route_name, options, recall = {}, method_name = nil)
