@@ -22,6 +22,6 @@ class QueryTokenTest < Minitest::Test
   private
 
   def tokenize(query)
-    ActiveSupport::URL::QueryToken.tokenize(query)
+    ActiveSupport::URL::QueryToken.tokenize(query).map(&:to_a)
   end
 end

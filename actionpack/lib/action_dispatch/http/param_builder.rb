@@ -41,7 +41,8 @@ module ActionDispatch
         depth_limit: param_depth_limit,
         encoding_template: encoding_template,
         coerce_value: ->(v) { ActionDispatch::Http::UploadedFile.new(v) if Hash === v },
-        deep_munge: ActionDispatch::Request::Utils.perform_deep_munge
+        deep_munge: ActionDispatch::Request::Utils.perform_deep_munge,
+        separator: separator
       ).parse(qs)
     rescue ArgumentError => e
       raise InvalidParameterError, e.message, e.backtrace

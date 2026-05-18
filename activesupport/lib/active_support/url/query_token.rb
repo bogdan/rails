@@ -3,6 +3,8 @@ module ActiveSupport
     class QueryToken
       include Comparable
 
+      SEPARATOR = "&"
+
       attr_reader :name, :value
 
       # Parses query key/value pairs from a query string and returns them raw,
@@ -12,7 +14,7 @@ module ActiveSupport
       #   ActiveSupport::URL::QueryToken.tokenize("a=1&a=1&a=2").map {|k,v| "#{k} -> #{v}"}  # => ['a -> 1', 'a -> 1', 'a -> 2']
       #   ActiveSupport::URL::QueryToken.tokenize("name=Bogdan&email=bogdan%40example.com") # => [name=Bogdan, email=bogdan@example.com]
       #   ActiveSupport::URL::QueryToken.tokenize("a[one]=1&a[two]=2") # => [a[one]=1, a[two]=2]
-      def self.tokenize(query, namespace: nil, sorted: false, as_hash: nil)
+      def self.tokenize(query, namespace: nil, sorted: false, as_hash: nil, separator: SEPARATOR)
         if as_hash && !query.is_a?(Hash) && !query.is_a?(Array)
           query = as_hash.call(query) || query
         end
@@ -24,7 +26,13 @@ module ActiveSupport
             value = query[key]
             unless (value.is_a?(Hash) || value.is_a?(Array)) && value.empty?
               key_param = key.respond_to?(:to_param) ? key.to_param : key
-              tokenize(value, namespace: namespace ? "#{namespace}[#{key_param}]" : key_param, sorted: sorted, as_hash: as_hash)
+              tokenize(
+                value,
+                namespace: namespace ? "#{namespace}[#{key_param}]" : key_param,
+                sorted: sorted,
+                as_hash: as_hash,
+                separator: separator
+              )
             end
           end
           result.flatten!
@@ -36,7 +44,7 @@ module ActiveSupport
           if namespace
             new(namespace, query)
           else
-            query.delete_prefix("?").split(/[&;] */n, -1).map { |p| parse(p) }
+            query.delete_prefix("?").split(separator, -1).map { |p| parse(p) }
           end
         when QueryToken
           namespace ? new("#{namespace}[#{query.name}]", query.value) : [query]
@@ -45,7 +53,7 @@ module ActiveSupport
             ns = "#{namespace}[]"
             query.map do |item|
               raise FormattingError, "Can not serialize #{item.inspect} as element of an Array" if item.is_a?(Array)
-              tokenize(item, namespace: ns, sorted: sorted, as_hash: as_hash)
+              tokenize(item, namespace: ns, sorted: sorted, as_hash: as_hash, separator: separator)
             end
           else
             query.map { |token| parse(token) }
@@ -82,7 +90,8 @@ module ActiveSupport
       end
 
       def <=>(other)
-        to_s <=> other.to_s
+        keys = key <=> other.key
+        keys == 0 ? value <=> other.value : keys
       end
 
       def ==(other)

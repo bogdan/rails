@@ -6,20 +6,22 @@ module ActiveSupport
         depth_limit: 100,
         encoding_template: nil,
         coerce_value: nil,
-        deep_munge: false
+        deep_munge: false,
+        separator: ActiveSupport::URL::QueryToken::SEPARATOR
       )
         @make_params = make_params
         @depth_limit = depth_limit
         @encoding_template = encoding_template
         @coerce_value = coerce_value
         @deep_munge = deep_munge
+        @separator = separator || ActiveSupport::URL::QueryToken::SEPARATOR
       end
 
       def parse(query)
         return query.deep_stringify_keys if query.is_a?(Hash)
 
         params = @make_params.call
-        ActiveSupport::URL::QueryToken.tokenize(query).each do |token|
+        ActiveSupport::URL::QueryToken.tokenize(query, separator: @separator).each do |token|
           parse_token(params, token.name, coerce(token.value), 0)
         end
         params
