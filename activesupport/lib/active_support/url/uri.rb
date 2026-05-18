@@ -616,7 +616,7 @@ module ActiveSupport::URL
       string = parse_protocol(string)
 
       if protocol.nil? && @priority == :path
-        self.path = string.start_with?("/") ? string : "/#{string}"
+        @path = string
         return
       end
 

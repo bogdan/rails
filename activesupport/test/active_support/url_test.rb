@@ -46,19 +46,25 @@ class URLParseTest < URLBaseTest
   def test_priority_path_treats_string_before_slash_as_path
     uri = ActiveSupport::URL.parse("gusiev.com/articles", priority: :path)
     assert_nil uri.host
-    assert_equal "/gusiev.com/articles", uri.path
+    assert_equal "gusiev.com/articles", uri.path
   end
 
   def test_priority_path_treats_bare_string_as_path
     uri = ActiveSupport::URL.parse("gusiev.com", priority: :path)
     assert_nil uri.host
-    assert_equal "/gusiev.com", uri.path
+    assert_equal "gusiev.com", uri.path
+  end
+
+  def test_priority_path_preserves_leading_slash
+    uri = ActiveSupport::URL.parse("/articles", priority: :path)
+    assert_nil uri.host
+    assert_equal "/articles", uri.path
   end
 
   def test_priority_path_preserves_query_and_anchor
     uri = ActiveSupport::URL.parse("gusiev.com/articles?a=1#top", priority: :path)
     assert_nil uri.host
-    assert_equal "/gusiev.com/articles", uri.path
+    assert_equal "gusiev.com/articles", uri.path
     assert_equal "a=1", uri.query_string
     assert_equal "top", uri.anchor
   end
