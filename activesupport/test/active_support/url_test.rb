@@ -25,7 +25,7 @@ end
 
 class URLTest < URLBaseTest
   def test_inspect
-    assert_equal "#<ActiveSupport::URL::Uri \"http://google.com\">", ActiveSupport::URL.parse('http://google.com').inspect
+    assert_equal "#<ActiveSupport::URL \"http://google.com\">", ActiveSupport::URL.parse('http://google.com').inspect
   end
 end
 
@@ -606,7 +606,7 @@ class URLBuildTest < URLBaseTest
   end
 
   def test_username_accessor_returns_raw_value
-    uri = ActiveSupport::URL::Uri.new({protocol: 'http', username: 'openid.aol.com/nextangler', password: 'one two?', host: 'host.com', path: '/'})
+    uri = ActiveSupport::URL.new({protocol: 'http', username: 'openid.aol.com/nextangler', password: 'one two?', host: 'host.com', path: '/'})
     assert_equal 'openid.aol.com/nextangler', uri.username
     assert_equal 'one two?', uri.password
   end

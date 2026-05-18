@@ -37,7 +37,7 @@ module ActionDispatch
 
       def build_response(req)
         target = path(req.path_parameters, req).to_s
-        uri = target.empty? ? ActiveSupport::URL::Uri.new({}) : ActiveSupport::URL.parse(target, priority: :path)
+        uri = target.empty? ? ActiveSupport::URL.new : ActiveSupport::URL.parse(target, priority: :path)
 
         unless uri.host
           if relative_path?(target)

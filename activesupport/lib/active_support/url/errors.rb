@@ -1,25 +1,27 @@
-module ActiveSupport::URL
-  class Error < StandardError
-  end
+module ActiveSupport
+  class URL
+    class Error < StandardError
+    end
 
-  class FormattingError < Error
-  end
+    class FormattingError < Error
+    end
 
-  class ParseError < Error
-  end
+    class ParseError < Error
+    end
 
-  class QueryParseError < Error
-  end
+    class QueryParseError < Error
+    end
 
-  class ParamError < ParseError
-  end
+    class ParamError < ParseError
+    end
 
-  class ParameterTypeError < ParamError
-  end
+    class ParameterTypeError < ParamError
+    end
 
-  class ParamsTooDeepError < ParamError
-  end
+    class ParamsTooDeepError < ParamError
+    end
 
-  class InvalidParameterError < ParamError
+    class InvalidParameterError < ParamError
+    end
   end
 end
