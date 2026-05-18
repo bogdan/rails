@@ -44,7 +44,7 @@ module ActiveSupport
           if namespace
             new(namespace, query)
           else
-            query.delete_prefix("?").split(separator, -1).map { |p| parse(p) }
+            query.delete_prefix("?").split(separator || SEPARATOR, -1).map { |p| parse(p) }
           end
         when QueryToken
           namespace ? new("#{namespace}[#{query.name}]", query.value) : [query]
@@ -63,20 +63,23 @@ module ActiveSupport
         end
       end
 
-      def self.parse(token)
-        case token
+      # Note this departs from WHATWG's specified parsing algorithm by
+      # giving a nil value for keys that do not use '='. Callers that need
+      # the standard's interpretation can use `v.to_s`.
+      def self.parse(value)
+        case value
         when QueryToken
-          token
+          value
         when String
-          key, value = token.split('=', 2).map do |s|
+          key, value = value.split('=', 2).map do |s|
             ::URI.decode_www_form_component(s)
           end
           key ||= ""
           new(key, value)
         when Array
-          QueryToken.new(*token)
+          QueryToken.new(*value)
         else
-          raise QueryParseError, "Can not parse query token #{token.inspect}"
+          raise QueryParseError, "Can not parse query token #{value.inspect}"
         end
       end
 

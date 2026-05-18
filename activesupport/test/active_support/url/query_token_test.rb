@@ -10,6 +10,7 @@ class QueryTokenTest < Minitest::Test
     assert_equal [['a', '=1']], tokenize("a==1")
     assert_equal [['a', '1'], ["", nil]], tokenize("a=1&")
     assert_equal [["", nil], ['a', '1']], tokenize("&a=1")
+    assert_equal [['a', nil], ["", nil], ['b', nil]], tokenize("a&&b")
     assert_equal [["", ""]], tokenize("=")
     assert_equal [[" ", nil]], tokenize(" ")
     assert_equal [[" ", '']], tokenize(" =")
