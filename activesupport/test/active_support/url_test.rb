@@ -381,6 +381,10 @@ class URLParseTest < URLBaseTest
     })
   end
 
+  def test_mailto_without_email_roundtrip
+    assert_equal "mailto:?subject=Hello", ActiveSupport::URL.parse("mailto:?subject=Hello").to_s
+  end
+
   def test_parse_preserves_raw_query_string_on_emit
     # Characters valid in query values per RFC 3986 (like ?) must not be
     # re-encoded when a URL is parsed and re-emitted without modifying the query.

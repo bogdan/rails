@@ -50,7 +50,11 @@ module ActiveSupport::URL
     "file" => {port: nil},
     "postgres" => {port: 5432},
     "mysql" => {port: 3306},
-    "mailto" => {port: nil}
+    "mailto" => {port: nil, addressing: true},
+    "xmpp" => {port: nil, addressing: true},
+    "im" => {port: nil, addressing: true},
+    "pres" => {port: nil, addressing: true},
+    "acct" => {port: nil, addressing: true}
   }
 
 

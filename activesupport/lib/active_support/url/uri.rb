@@ -218,7 +218,7 @@ module ActiveSupport::URL
       if opaque?
         result << path.to_s
       else
-        result << (host || mailto? ? path : path!)
+        result << (host || addressing_protocol? ? path : path!)
       end
       if (qs = query_string(escape_query_param: escape_query_param))
         result << "?" << qs
@@ -234,13 +234,13 @@ module ActiveSupport::URL
         if opaque?
           protocol.empty? ? "" : "#{protocol}:"
         elsif @no_authority
-          protocol.empty? ? "//" : "#{protocol}://"
-        elsif !host && !mailto?
+          addressing_protocol? ? "#{protocol}:" : (protocol.empty? ? "//" : "#{protocol}://")
+        elsif !host && !addressing_protocol?
           raise ActiveSupport::URL::FormattingError, "can not build URI with protocol but without host"
         else
           [
             protocol.empty? ? "" : "#{protocol}:", authority
-          ].join(mailto? ? "" : "//")
+          ].join(addressing_protocol? ? "" : "//")
         end
       else
         authority
@@ -563,6 +563,10 @@ module ActiveSupport::URL
       port && port != default_port
     end
 
+    def addressing_protocol?
+      !!(ActiveSupport::URL::PROTOCOLS.fetch(protocol.to_s, {})[:addressing])
+    end
+
     def mailto?
       protocol == "mailto"
     end
@@ -590,6 +594,11 @@ module ActiveSupport::URL
     SCHEME_WITHOUT_AUTHORITY_REGEXP = /\A[a-zA-Z][a-zA-Z0-9+\-]*:(?=[a-zA-Z]|\z)/.freeze
     # Matches authority-less hierarchical URIs: scheme:/path (single slash, no authority).
     SCHEME_WITHOUT_AUTHORITY_PATH_REGEXP = /\A([a-zA-Z][a-zA-Z0-9+\-]*):\/(?!\/)/.freeze
+    # Matches any addressing scheme (mailto:, xmpp:, etc.) — compiled once from PROTOCOLS.
+    ADDRESSING_SCHEME_REGEXP = begin
+      schemes = ActiveSupport::URL::PROTOCOLS.select { |_, v| v[:addressing] }.keys.map { |k| Regexp.escape(k) }
+      /\A(#{schemes.join('|')}):/
+    end.freeze
 
     protected
 
@@ -661,7 +670,7 @@ module ActiveSupport::URL
     def parse_protocol(string)
       @opaque = false
       @no_authority = false
-      if string.include?("://") || string.start_with?("mailto:")
+      if string.include?("://") || string.match?(ADDRESSING_SCHEME_REGEXP)
         protocol, string = string.split(":", 2)
         self.protocol = protocol
       elsif !string.include?("@") && string.match?(SCHEME_WITHOUT_AUTHORITY_REGEXP)
