@@ -24,7 +24,7 @@ module ActiveSupport::URL
       if @query_tokens
         @query_tokens
       elsif @query
-        ActiveSupport::URL.send(:serialize_tokens, @query)
+        ActiveSupport::URL::QueryToken.tokenize(@query)
       elsif @query_string
         @query_tokens = ActiveSupport::URL.query_tokens(@query_string)
       else

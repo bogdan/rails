@@ -2,6 +2,8 @@ require "uri"
 
 module ActiveSupport; end unless defined?(ActiveSupport)
 
+require "active_support/url/errors"
+
 module ActiveSupport::URL
 
   autoload :QueryParser, 'active_support/url/query_parser'
@@ -184,7 +186,7 @@ module ActiveSupport::URL
   #     # => "person[name]=Bogdan&person[email]=bogdan%40example.com"
   #
   def self.serialize(query, namespace: nil, sorted: false, as_hash: nil)
-    serialize_tokens(query, namespace: namespace, sorted: sorted, as_hash: as_hash).join("&")
+    QueryToken.tokenize(query, namespace: namespace, sorted: sorted, as_hash: as_hash).join("&")
   end
 
   def self.join(*uris)
@@ -194,71 +196,5 @@ module ActiveSupport::URL
       memo.send(:join, uri)
     end
   end
-
-  class Error < StandardError
-  end
-
-  class FormattingError < Error
-  end
-
-  class ParseError < Error
-  end
-
-  class QueryParseError < Error
-  end
-
-  class ParamError < ParseError
-  end
-
-  class ParameterTypeError < ParamError
-  end
-
-  class ParamsTooDeepError < ParamError
-  end
-
-  class InvalidParameterError < ParamError
-  end
-
-  protected
-
-  def self.serialize_tokens(query, namespace: nil, sorted: false, as_hash: nil)
-    if as_hash && !query.is_a?(Hash) && !query.is_a?(Array)
-      query = as_hash.call(query) || query
-    end
-    case query
-    when Hash
-      keys = query.keys
-      keys.sort_by!(&:to_s) if sorted && !namespace.to_s.include?("[]")
-      result = keys.map do |key|
-        value = query[key]
-        unless (value.is_a?(Hash) || value.is_a?(Array)) && value.empty?
-          key_param = key.respond_to?(:to_param) ? key.to_param : key
-          serialize_tokens(value, namespace: namespace ? "#{namespace}[#{key_param}]" : key_param, sorted: sorted, as_hash: as_hash)
-        end
-      end
-      result.flatten!
-      result.compact!
-      result
-    when Array
-      if namespace.nil? || namespace.empty?
-        raise FormattingError, "Can not serialize Array without namespace"
-      end
-
-      namespace = "#{namespace}[]"
-      query.map do |item|
-        if item.is_a?(Array)
-          raise FormattingError, "Can not serialize #{item.inspect} as element of an Array"
-        end
-        serialize_tokens(item, namespace: namespace, sorted: sorted, as_hash: as_hash)
-      end
-    else
-      if namespace
-        QueryToken.new(namespace, query)
-      else
-        []
-      end
-    end
-  end
-
 
 end

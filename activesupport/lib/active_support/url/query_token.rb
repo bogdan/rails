@@ -4,6 +4,40 @@ module ActiveSupport::URL
 
     attr_reader :name, :value
 
+    def self.tokenize(query, namespace: nil, sorted: false, as_hash: nil)
+      if as_hash && !query.is_a?(Hash) && !query.is_a?(Array)
+        query = as_hash.call(query) || query
+      end
+      case query
+      when Hash
+        keys = query.keys
+        keys.sort_by!(&:to_s) if sorted && !namespace.to_s.include?("[]")
+        result = keys.map do |key|
+          value = query[key]
+          unless (value.is_a?(Hash) || value.is_a?(Array)) && value.empty?
+            key_param = key.respond_to?(:to_param) ? key.to_param : key
+            tokenize(value, namespace: namespace ? "#{namespace}[#{key_param}]" : key_param, sorted: sorted, as_hash: as_hash)
+          end
+        end
+        result.flatten!
+        result.compact!
+        result
+      when Array
+        if namespace.nil? || namespace.empty?
+          raise FormattingError, "Can not serialize Array without namespace"
+        end
+        namespace = "#{namespace}[]"
+        query.map do |item|
+          if item.is_a?(Array)
+            raise FormattingError, "Can not serialize #{item.inspect} as element of an Array"
+          end
+          tokenize(item, namespace: namespace, sorted: sorted, as_hash: as_hash)
+        end
+      else
+        namespace ? new(namespace, query) : []
+      end
+    end
+
     def self.parse(token)
       case token
       when QueryToken
