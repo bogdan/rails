@@ -9,7 +9,7 @@ class URLBaseTest < Minitest::Test
     expected_parts.each do |part, value|
       actual = uri.public_send(part)
       assert actual == value,
-        "Expected #{part.inspect} to equal #{value.inspect}, but it was #{actual.inspect}"
+        "#{uri_string.inspect} — expected #{part.inspect} to equal #{value.inspect}, got #{actual.inspect}"
     end
   end
 
