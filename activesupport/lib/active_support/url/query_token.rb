@@ -17,12 +17,8 @@ module ActiveSupport::URL
       when Array
         QueryToken.new(*token)
       else
-        raise_parse_error(token)
+        raise QueryParseError, "Can not parse query token #{token.inspect}"
       end
-    end
-
-    def self.raise_parse_error(token)
-      raise QueryParseError, "Can not parse query token #{token.inspect}"
     end
 
     def initialize(name, value)

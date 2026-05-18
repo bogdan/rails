@@ -7,7 +7,7 @@ class URLBaseTest < Minitest::Test
   def assert_parts(uri_string, expected_parts)
     uri = ActiveSupport::URL.parse(uri_string)
     expected_parts.each do |part, value|
-      actual = uri.send(part)
+      actual = uri.public_send(part)
       assert actual == value,
         "Expected #{part.inspect} to equal #{value.inspect}, but it was #{actual.inspect}"
     end
@@ -904,5 +904,59 @@ class URLEscapeQueryParamTest < URLBaseTest
     uri = ActiveSupport::URL.parse("http://example.com?name=John&password=secret&token")
     result = uri.to_s(escape_query_param: filter)
     assert_equal "http://example.com?name=John&password=[FILTERED]&token", result
+  end
+end
+
+class URLAuthorityLessTest < URLBaseTest
+  def test_sqlite3_absolute_path
+    assert_parts "sqlite3:/absolute/path", protocol: "sqlite3", host: nil, path: "/absolute/path", opaque?: false
+  end
+
+  def test_sqlite3_absolute_path_roundtrip
+    assert_equal "sqlite3:///absolute/path", ActiveSupport::URL.parse("sqlite3:/absolute/path").to_s
+  end
+
+  def test_sqlite3_relative_path_is_opaque
+    assert_parts "sqlite3:relative/path", protocol: "sqlite3", host: nil, path: "relative/path", opaque?: true
+  end
+
+  def test_sqlite3_relative_path_roundtrip
+    assert_equal "sqlite3:relative/path", ActiveSupport::URL.parse("sqlite3:relative/path").to_s
+  end
+
+  def test_file_single_slash
+    assert_parts "file:/etc/hosts", protocol: "file", host: nil, path: "/etc/hosts", opaque?: false
+  end
+
+  def test_file_single_slash_roundtrip
+    assert_equal "file:///etc/hosts", ActiveSupport::URL.parse("file:/etc/hosts").to_s
+  end
+
+  def test_file_triple_slash_preserves_empty_authority
+    uri = ActiveSupport::URL.parse("file:///etc/hosts")
+    assert_equal "file", uri.protocol
+    assert_nil uri.host
+    assert_equal "/etc/hosts", uri.path
+    assert_equal "file:///etc/hosts", uri.to_s
+  end
+
+  def test_file_triple_slash_with_query
+    uri = ActiveSupport::URL.parse("file:///etc/hosts?cache=true")
+    assert_equal "file:///etc/hosts?cache=true", uri.to_s
+  end
+
+  def test_sqlite3_absolute_path_with_query
+    uri = ActiveSupport::URL.parse("sqlite3:/db/production.sqlite3?pool=5")
+    assert_equal "sqlite3", uri.protocol
+    assert_equal "/db/production.sqlite3", uri.path
+    assert_equal "sqlite3:///db/production.sqlite3?pool=5", uri.to_s
+  end
+
+  def test_regular_hierarchical_uri_unaffected
+    assert_parts "http://example.com/path", protocol: "http", host: "example.com", path: "/path", opaque?: false
+  end
+
+  def test_regular_hierarchical_uri_roundtrip
+    assert_equal "http://example.com/path", ActiveSupport::URL.parse("http://example.com/path").to_s
   end
 end

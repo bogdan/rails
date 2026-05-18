@@ -41,8 +41,7 @@ module ActionDispatch
         return FILTERED unless uri.rfc3986?
         filter = request.parameter_filter
         uri.to_s(escape_query_param: ->(name, value) {
-          filtered = filter.filter(name => value).first.last
-          "#{CGI.escape(name)}=#{filtered}" unless filtered.equal?(value)
+          "#{CGI.escape(name)}=#{filter.filter(name => value).first.last}"
         })
       rescue ActiveSupport::URL::Error
         FILTERED

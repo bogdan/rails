@@ -47,6 +47,8 @@ module ActiveSupport::URL
     def initialize(argument, priority: :host)
       @query_tokens = nil
       @query_string = nil
+      @opaque = false
+      @no_authority = false
       @priority = priority
       case argument
       when String
@@ -213,7 +215,11 @@ module ActiveSupport::URL
     def to_s(escape_query_param: nil)
       result = []
       result << location
-      result << (host || mailto? ? path : path!)
+      if opaque?
+        result << path.to_s
+      else
+        result << (host || mailto? ? path : path!)
+      end
       if (qs = query_string(escape_query_param: escape_query_param))
         result << "?" << qs
       end
@@ -225,12 +231,17 @@ module ActiveSupport::URL
 
     def location
       if protocol
-        if !host && !mailto?
+        if opaque?
+          protocol.empty? ? "" : "#{protocol}:"
+        elsif @no_authority
+          protocol.empty? ? "//" : "#{protocol}://"
+        elsif !host && !mailto?
           raise ActiveSupport::URL::FormattingError, "can not build URI with protocol but without host"
+        else
+          [
+            protocol.empty? ? "" : "#{protocol}:", authority
+          ].join(mailto? ? "" : "//")
         end
-        [
-          protocol.empty? ? "" : "#{protocol}:", authority
-        ].join(mailto? ? "" : "//")
       else
         authority
       end
@@ -565,7 +576,29 @@ module ActiveSupport::URL
       protocol == "mailto"
     end
 
+    def opaque
+      @opaque ? path : nil
+    end
+
+    def opaque?
+      @opaque
+    end
+
+    def opaque=(value)
+      if value
+        @opaque = true
+        @path = value.to_s
+      else
+        @opaque = false
+      end
+    end
+
     FRAGMENT_UNSAFE = /[^a-zA-Z0-9\-\._~!$&'()*+,;=:@\/?]/.freeze
+    # Matches rootless-path URIs: scheme:path without "//". Excludes host:port by
+    # requiring the scheme to contain no dots and to be followed by a letter or end-of-string.
+    SCHEME_WITHOUT_AUTHORITY_REGEXP = /\A[a-zA-Z][a-zA-Z0-9+\-]*:(?=[a-zA-Z]|\z)/.freeze
+    # Matches authority-less hierarchical URIs: scheme:/path (single slash, no authority).
+    SCHEME_WITHOUT_AUTHORITY_PATH_REGEXP = /\A([a-zA-Z][a-zA-Z0-9+\-]*):\/(?!\/)/.freeze
 
     protected
 
@@ -587,12 +620,20 @@ module ActiveSupport::URL
         return
       end
 
-      if string.include?("/")
-        string, path = string.split("/", 2)
-        self.path = "/" + path
+      if @opaque
+        # Rootless-path URI: scheme:path without authority (e.g. sqlite3:db.sqlite3, urn:isbn:...)
+        @path = string unless string.empty?
+      else
+        if string.include?("/")
+          string, path = string.split("/", 2)
+          self.path = "/" + path
+        end
+        if string.empty? && protocol
+          @no_authority = true
+        else
+          self.authority = string
+        end
       end
-
-      self.authority = string
     end
 
     def find_protocol_for_ssl(ssl)
@@ -627,9 +668,19 @@ module ActiveSupport::URL
     end
 
     def parse_protocol(string)
+      @opaque = false
+      @no_authority = false
       if string.include?("://") || string.start_with?("mailto:")
         protocol, string = string.split(":", 2)
         self.protocol = protocol
+      elsif !string.include?("@") && string.match?(SCHEME_WITHOUT_AUTHORITY_REGEXP)
+        protocol, string = string.split(":", 2)
+        self.protocol = protocol
+        @opaque = true
+      elsif !string.include?("@") && (m = string.match(SCHEME_WITHOUT_AUTHORITY_PATH_REGEXP))
+        self.protocol = m[1]
+        string = string[m[1].length + 1..]
+        @no_authority = true
       end
       if string.start_with?("//")
         self.protocol ||= ''

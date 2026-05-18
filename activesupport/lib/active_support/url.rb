@@ -82,6 +82,10 @@ module ActiveSupport::URL
   #     # host: nil, path: "/gusiev.com/articles"
   #
   # URLs with an explicit protocol are unaffected by +priority+.
+  def self.new(parts = {})
+    Uri.new(parts)
+  end
+
   def self.parse(argument, parts: nil, priority: :host)
     Uri.new(argument, priority: priority).update(parts)
   end
