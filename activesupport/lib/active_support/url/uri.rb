@@ -559,15 +559,6 @@ module ActiveSupport::URL
          uri.match(URI::RFC3986_Parser::RFC3986_relative_ref))
     end
 
-    def email=(email)
-      self.protocol ||= "mailto"
-      self.authority = email
-    end
-
-    def email
-      authority
-    end
-
     def custom_port?
       port && port != default_port
     end

@@ -373,7 +373,7 @@ class URLParseTest < URLBaseTest
   def test_mailto_without_email
     assert_parts("mailto:?subject=Talkable%20is%20Hiring&body=https%3A%2F%2Fwww.talkable.com%2Fjobs", {
       protocol: 'mailto',
-      email: nil,
+      authority: nil,
       query: {
         "subject" => "Talkable is Hiring",
         "body" => "https://www.talkable.com/jobs",
@@ -560,7 +560,7 @@ class URLBuildTest < URLBaseTest
   def test_build_protocol
     assert_equal 'http://hello.com', ActiveSupport::URL.build(protocol: 'http', host: 'hello.com', port: 80)
     assert_equal 'mailto:bogdan@gusiev.com', ActiveSupport::URL.build(protocol: 'mailto', username: "bogdan", host: 'gusiev.com')
-    assert_equal 'mailto:bogdan@gusiev.com', ActiveSupport::URL.build(email: "bogdan@gusiev.com")
+    assert_equal 'mailto:bogdan@gusiev.com', ActiveSupport::URL.build(protocol: 'mailto', authority: "bogdan@gusiev.com")
     assert_equal 'mailto:?subject=Hello&body=Welcome', ActiveSupport::URL.build(protocol: 'mailto', query: {subject: 'Hello', body: "Welcome"})
   end
 
