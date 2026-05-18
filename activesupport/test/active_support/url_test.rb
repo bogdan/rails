@@ -114,7 +114,7 @@ class URLParseTest < URLBaseTest
       endpoint: 'http://user:pass@www.gusiev.com:8080/articles/index.html',
       anchor: 'header',
       fragment: 'header',
-      home_page?: false,
+      root_path?: false,
     })
   end
 
@@ -133,7 +133,7 @@ class URLParseTest < URLBaseTest
       resource!: '/',
       location: 'http://gusiev.com',
       endpoint: 'http://gusiev.com',
-      home_page?: true,
+      root_path?: true,
     })
   end
 
@@ -143,7 +143,7 @@ class URLParseTest < URLBaseTest
       path: '/',
       path!: '/',
       request: '/?a=b',
-      home_page?: true,
+      root_path?: true,
     })
   end
 
@@ -171,7 +171,7 @@ class URLParseTest < URLBaseTest
       protocol: nil,
       location: nil,
       extension: 'html',
-      home_page?: false,
+      root_path?: false,
     })
   end
 
@@ -183,7 +183,7 @@ class URLParseTest < URLBaseTest
       filename: nil,
       'file!' => '',
       extension: nil,
-      home_page?: false,
+      root_path?: false,
     })
   end
 
@@ -242,7 +242,7 @@ class URLParseTest < URLBaseTest
       query_string: 'a=b&c=d',
       query: {'a' => 'b', 'c' => 'd'},
       request: '/index.html?a=b&c=d',
-      home_page?: true,
+      root_path?: true,
     })
   end
 

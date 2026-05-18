@@ -285,7 +285,7 @@ module ActiveSupport::URL
       self.path = string
     end
 
-    def home_page?
+    def root_path?
       path! == ActiveSupport::URL::ROOT || path! == "/index.html"
     end
 

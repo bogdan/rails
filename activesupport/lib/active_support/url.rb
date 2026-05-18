@@ -32,7 +32,7 @@ module ActiveSupport::URL
     request: [:request_uri]
   }
 
-  DELEGATES = [:port!, :host!, :path!, :home_page?, :https?]
+  DELEGATES = [:port!, :host!, :path!, :root_path?, :https?]
 
   PROTOCOLS = {
     "http" => {port: 80, ssl: false},
