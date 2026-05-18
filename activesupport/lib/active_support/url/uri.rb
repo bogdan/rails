@@ -218,7 +218,8 @@ module ActiveSupport::URL
       if opaque?
         result << path.to_s
       else
-        result << (host || addressing_protocol? ? path : path!)
+        p = host || addressing_protocol? ? path : path!
+        result << (host && p && !p.start_with?("/") ? "/#{p}" : p)
       end
       if (qs = query_string(escape_query_param: escape_query_param))
         result << "?" << qs
@@ -359,10 +360,8 @@ module ActiveSupport::URL
     end
 
     def path=(path)
-      @path = path.to_s
-      if !@path.empty? && !@path.start_with?("/")
-        @path = "/" + @path
-      end
+      str = path.to_s
+      @path = str.empty? ? nil : str
     end
 
     def protocol=(protocol)
@@ -379,9 +378,8 @@ module ActiveSupport::URL
 
     def directory=(string)
       string ||= "/"
-      if file && string !~ %r{/\z}
-        string += '/'
-      end
+      string = "/#{string}" unless string.start_with?("/")
+      string += "/" if file && !string.end_with?("/")
       self.path = string + file.to_s
     end
 
@@ -426,10 +424,13 @@ module ActiveSupport::URL
         name = name.gsub(%r{\A/}, "")
       end
 
-      self.path = path_tokens.tap do |p|
-        filename_index = [p.size-1, 0].max
-        p[filename_index] = name
-      end.join("/")
+      tokens = path_tokens
+      if tokens.empty?
+        self.path = "/#{name}"
+      else
+        tokens[tokens.size - 1] = name
+        self.path = tokens.join("/")
+      end
     end
 
     def path_tokens
@@ -513,7 +514,7 @@ module ActiveSupport::URL
       self.query_tokens = []
       self.path = nil
       value = parse_anchor_and_query(value)
-      self.path = value
+      self.path = value && !value.start_with?("/") ? "/#{value}" : value
     end
 
     def path!
@@ -582,7 +583,7 @@ module ActiveSupport::URL
     def opaque=(value)
       if value
         @opaque = true
-        @path = value.to_s
+        self.path = value.to_s
       else
         @opaque = false
       end
@@ -616,13 +617,13 @@ module ActiveSupport::URL
       string = parse_protocol(string)
 
       if protocol.nil? && @priority == :path
-        @path = string
+        self.path = string
         return
       end
 
       if @opaque
         # Rootless-path URI: scheme:path without authority (e.g. sqlite3:db.sqlite3, urn:isbn:...)
-        @path = string unless string.empty?
+        self.path = string unless string.empty?
       else
         if string.include?("/")
           string, path = string.split("/", 2)

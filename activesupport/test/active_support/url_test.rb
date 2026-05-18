@@ -479,6 +479,7 @@ class URLReplaceTest < URLBaseTest
     assert_equal 'gusiev.com/article', ActiveSupport::URL.replace("gusiev.com", path: '/article')
     assert_equal 'gusiev.com/article2#header', ActiveSupport::URL.replace("gusiev.com/article1#header", path: '/article2')
     assert_equal 'gusiev.com#header', ActiveSupport::URL.replace("gusiev.com/article#header", path: nil)
+    assert_equal 'gusiev.com#header', ActiveSupport::URL.replace("gusiev.com/article#header", path: '')
     assert_equal 'gusiev.com/article2?a=b', ActiveSupport::URL.replace("gusiev.com/article1?a=b", path: 'article2')
   end
 
