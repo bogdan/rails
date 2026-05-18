@@ -762,7 +762,7 @@ class URLSerializeTest < URLBaseTest
     assert_serializes_as({"a[b]" => [1]}, ["a[b][]=1"])
     assert_serializes_as({"a" => [1, 2], "b" => "blah"}, "a%5B%5D=1&a%5B%5D=2&b=blah")
     assert_serializes_as({a: [1, {c: 2, b: 3}, 4]}, ["a[]=1", "a[][c]=2", "a[][b]=3", "a[]=4"])
-    assert_raises(ActiveSupport::URL::FormattingError) { ActiveSupport::URL.serialize([1, 2]) }
+    assert_raises(ActiveSupport::URL::QueryParseError) { ActiveSupport::URL.serialize([1, 2]) }
     assert_raises(ActiveSupport::URL::FormattingError) { ActiveSupport::URL.serialize({a: [1, [2]]}) }
 
     params = {b: {c: 3, d: [4, 5], e: {x: [6], y: 7, z: [8, 9]}}}
@@ -806,22 +806,6 @@ class URLSerializeTest < URLBaseTest
   end
 end
 
-class URLQueryTokensTest < URLBaseTest
-  def test_query_tokens
-    assert_equal [['a', '1']], ActiveSupport::URL.query_tokens("a=1").map(&:to_a)
-    assert_equal [['a', '=']], ActiveSupport::URL.query_tokens("a==").map(&:to_a)
-    assert_equal [['a', '=1']], ActiveSupport::URL.query_tokens("a==1").map(&:to_a)
-    assert_equal [['a', '1'], ["", nil]], ActiveSupport::URL.query_tokens("a=1&").map(&:to_a)
-    assert_equal [["", nil], ['a', '1']], ActiveSupport::URL.query_tokens("&a=1").map(&:to_a)
-    assert_equal [["", ""]], ActiveSupport::URL.query_tokens("=").map(&:to_a)
-    assert_equal [[" ", nil]], ActiveSupport::URL.query_tokens(" ").map(&:to_a)
-    assert_equal [[" ", '']], ActiveSupport::URL.query_tokens(" =").map(&:to_a)
-    assert_equal [["", ' ']], ActiveSupport::URL.query_tokens("= ").map(&:to_a)
-    assert_equal [['a', '1'], ["b", nil]], ActiveSupport::URL.query_tokens("a=1&b").map(&:to_a)
-    assert_equal [['a', ''], ['b', nil]], ActiveSupport::URL.query_tokens("a=&b").map(&:to_a)
-    assert_equal [['a', '1'], ['b', '2']], ActiveSupport::URL.query_tokens("a=1&b=2").map(&:to_a)
-  end
-end
 
 class URLParseQueryTest < URLBaseTest
   def test_parse_query

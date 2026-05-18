@@ -111,7 +111,7 @@ module ActiveSupport
     end
 
     class << self
-      (PARTS + ALIASES.values.flatten + DELEGATES - [:query_tokens]).each do |part|
+      (PARTS + ALIASES.values.flatten + DELEGATES).each do |part|
         define_method(part) do |string|
           new(string)[part]
         end
@@ -154,30 +154,6 @@ module ActiveSupport
     #   ActiveSupport::URL.parse_query("p[one]=1&a[two]=2")   # => {"p" => {"one" => "1"}, "a" => {"two" => "2"}}
     def self.parse_query(query)
       QueryParser.new.parse(query)
-    end
-
-    # Parses query key/value pairs from a query string and returns them raw,
-    # without organizing them into hashes or normalizing values.
-    #
-    #   ActiveSupport::URL.query_tokens("a=1&b=2").map {|k,v| "#{k} -> #{v}"}  # => ['a -> 1', 'b -> 2']
-    #   ActiveSupport::URL.query_tokens("a=1&a=1&a=2").map {|k,v| "#{k} -> #{v}"}  # => ['a -> 1', 'a -> 1', 'a -> 2']
-    #   ActiveSupport::URL.query_tokens("name=Bogdan&email=bogdan%40example.com") # => [name=Bogdan, email=bogdan@example.com]
-    #   ActiveSupport::URL.query_tokens("a[one]=1&a[two]=2") # => [a[one]=1, a[two]=2]
-    def self.query_tokens(query)
-      case query
-      when Enumerable, Enumerator
-        query.map do |token|
-          QueryToken.parse(token)
-        end
-      when nil, ''
-        []
-      when String
-        query.gsub(/\A\?/, '').split(/[&;] */n, -1).map do |p|
-          QueryToken.parse(p)
-        end
-      else
-        raise QueryParseError, "can not parse #{query.inspect} query tokens"
-      end
     end
 
     # Serializes query parameters into a query string.
@@ -226,7 +202,7 @@ module ActiveSupport
       elsif @query
         QueryToken.tokenize(@query)
       elsif @query_string
-        @query_tokens = ActiveSupport::URL.query_tokens(@query_string)
+        @query_tokens = QueryToken.tokenize(@query_string)
       else
         []
       end
@@ -313,7 +289,7 @@ module ActiveSupport
       when Hash
         self.query = self.query.deep_merge(query.deep_stringify_keys)
       when String, Array
-        self.query_tokens += ActiveSupport::URL.query_tokens(query)
+        self.query_tokens += QueryToken.tokenize(query)
       when nil
       else
         raise QueryParseError, "#{query.inspect} can not be merged"
@@ -536,7 +512,7 @@ module ActiveSupport
         @query_tokens = nil
       else
         @query = nil
-        @query_tokens = ActiveSupport::URL.query_tokens(tokens)
+        @query_tokens = QueryToken.tokenize(tokens)
       end
       @query_string = nil
     end

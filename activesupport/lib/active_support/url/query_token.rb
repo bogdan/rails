@@ -5,6 +5,13 @@ module ActiveSupport
 
       attr_reader :name, :value
 
+      # Parses query key/value pairs from a query string and returns them raw,
+      # without organizing them into hashes or normalizing values.
+      #
+      #   ActiveSupport::URL::QueryToken.tokenize("a=1&b=2").map {|k,v| "#{k} -> #{v}"}  # => ['a -> 1', 'b -> 2']
+      #   ActiveSupport::URL::QueryToken.tokenize("a=1&a=1&a=2").map {|k,v| "#{k} -> #{v}"}  # => ['a -> 1', 'a -> 1', 'a -> 2']
+      #   ActiveSupport::URL::QueryToken.tokenize("name=Bogdan&email=bogdan%40example.com") # => [name=Bogdan, email=bogdan@example.com]
+      #   ActiveSupport::URL::QueryToken.tokenize("a[one]=1&a[two]=2") # => [a[one]=1, a[two]=2]
       def self.tokenize(query, namespace: nil, sorted: false, as_hash: nil)
         if as_hash && !query.is_a?(Hash) && !query.is_a?(Array)
           query = as_hash.call(query) || query
@@ -23,19 +30,28 @@ module ActiveSupport
           result.flatten!
           result.compact!
           result
-        when Array
-          if namespace.nil? || namespace.empty?
-            raise FormattingError, "Can not serialize Array without namespace"
+        when nil, ''
+          namespace ? new(namespace, query) : []
+        when String
+          if namespace
+            new(namespace, query)
+          else
+            query.delete_prefix("?").split(/[&;] */n, -1).map { |p| parse(p) }
           end
-          namespace = "#{namespace}[]"
-          query.map do |item|
-            if item.is_a?(Array)
-              raise FormattingError, "Can not serialize #{item.inspect} as element of an Array"
+        when QueryToken
+          namespace ? new("#{namespace}[#{query.name}]", query.value) : [query]
+        when Enumerable, Enumerator
+          if namespace
+            ns = "#{namespace}[]"
+            query.map do |item|
+              raise FormattingError, "Can not serialize #{item.inspect} as element of an Array" if item.is_a?(Array)
+              tokenize(item, namespace: ns, sorted: sorted, as_hash: as_hash)
             end
-            tokenize(item, namespace: namespace, sorted: sorted, as_hash: as_hash)
+          else
+            query.map { |token| parse(token) }
           end
         else
-          namespace ? new(namespace, query) : []
+          namespace ? new(namespace, query) : raise(QueryParseError, "can not tokenize #{query.inspect}")
         end
       end
 

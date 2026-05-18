@@ -19,7 +19,7 @@ module ActiveSupport
         return query.deep_stringify_keys if query.is_a?(Hash)
 
         params = @make_params.call
-        ActiveSupport::URL.query_tokens(query).each do |token|
+        ActiveSupport::URL::QueryToken.tokenize(query).each do |token|
           parse_token(params, token.name, coerce(token.value), 0)
         end
         params
