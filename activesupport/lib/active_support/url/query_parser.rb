@@ -16,7 +16,7 @@ module ActiveSupport
       end
 
       def parse(query)
-        return ActiveSupport::URL::Utils.stringify_keys(query) if query.is_a?(Hash)
+        return query.deep_stringify_keys if query.is_a?(Hash)
 
         params = @make_params.call
         ActiveSupport::URL.query_tokens(query).each do |token|

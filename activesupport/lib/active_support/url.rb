@@ -1,5 +1,7 @@
 require "uri"
 require "pathname"
+require "active_support/core_ext/hash/keys"
+require "active_support/core_ext/hash/deep_merge"
 
 module ActiveSupport
   class URL
@@ -7,7 +9,6 @@ module ActiveSupport
 
     autoload :QueryParser, 'active_support/url/query_parser'
     autoload :QueryToken, 'active_support/url/query_token'
-    autoload :Utils, 'active_support/url/utils'
 
     ESSENTIAL_PARTS =  [
       :anchor, :protocol, :query_string,
@@ -310,10 +311,7 @@ module ActiveSupport
     def merge_query(query)
       case query
       when Hash
-        self.query = Utils.deep_merge(
-          self.query,
-          Utils.stringify_keys(query)
-        )
+        self.query = self.query.deep_merge(query.deep_stringify_keys)
       when String, Array
         self.query_tokens += ActiveSupport::URL.query_tokens(query)
       when nil
