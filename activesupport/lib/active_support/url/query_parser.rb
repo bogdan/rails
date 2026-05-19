@@ -7,7 +7,7 @@ module ActiveSupport
         encoding_template: nil,
         coerce_value: nil,
         deep_munge: false,
-        separator: ActiveSupport::URL::QueryToken::SEPARATOR
+        separator: nil
       )
         @make_params = make_params
         @depth_limit = depth_limit
@@ -21,7 +21,7 @@ module ActiveSupport
         return query.deep_stringify_keys if query.is_a?(Hash)
 
         params = @make_params.call
-        ActiveSupport::URL::QueryToken.tokenize(query, separator: @separator).each do |token|
+        ActiveSupport::URL::QueryToken.parse(query, separator: @separator).each do |token|
           parse_token(params, token.name, coerce(token.value), 0)
         end
         params

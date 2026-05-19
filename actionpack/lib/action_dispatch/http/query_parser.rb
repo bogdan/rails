@@ -21,7 +21,7 @@ module ActionDispatch
     def self.each_pair(s, separator = nil)
       return enum_for(:each_pair, s, separator) unless block_given?
       sep = separator && separator.length > 1 ? /[#{Regexp.escape(separator)}]/n : separator
-      ActiveSupport::URL::QueryToken.tokenize(s, separator: sep).each do |token|
+      ActiveSupport::URL::QueryToken.parse(s, separator: sep).each do |token|
         yield token.name, token.value
       end
       nil

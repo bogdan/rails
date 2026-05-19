@@ -14,7 +14,7 @@ module ActiveSupport
       #   ActiveSupport::URL::QueryToken.tokenize("a=1&a=1&a=2").map {|k,v| "#{k} -> #{v}"}  # => ['a -> 1', 'a -> 1', 'a -> 2']
       #   ActiveSupport::URL::QueryToken.tokenize("name=Bogdan&email=bogdan%40example.com") # => [name=Bogdan, email=bogdan@example.com]
       #   ActiveSupport::URL::QueryToken.tokenize("a[one]=1&a[two]=2") # => [a[one]=1, a[two]=2]
-      def self.tokenize(query, namespace: nil, sorted: false, as_hash: nil, separator: SEPARATOR)
+      def self.tokenize(query, namespace: nil, sorted: false, as_hash: nil)
         if as_hash && !query.is_a?(Hash) && !query.is_a?(Array)
           query = as_hash.call(query) || query
         end
@@ -31,7 +31,6 @@ module ActiveSupport
                 namespace: namespace ? "#{namespace}[#{key_param}]" : key_param,
                 sorted: sorted,
                 as_hash: as_hash,
-                separator: separator
               )
             end
           end
@@ -44,7 +43,7 @@ module ActiveSupport
           if namespace
             new(namespace, query)
           else
-            query.delete_prefix("?").split(separator || SEPARATOR, -1).map { |p| parse(p) }
+            raise FormattingError, "Can not tokenize a string without namespace"
           end
         when QueryToken
           namespace ? new("#{namespace}[#{query.name}]", query.value) : [query]
@@ -53,20 +52,31 @@ module ActiveSupport
             ns = "#{namespace}[]"
             query.map do |item|
               raise FormattingError, "Can not serialize #{item.inspect} as element of an Array" if item.is_a?(Array)
-              tokenize(item, namespace: ns, sorted: sorted, as_hash: as_hash, separator: separator)
+              tokenize(item, namespace: ns, sorted: sorted, as_hash: as_hash)
             end
           else
-            query.map { |token| parse(token) }
+            query.map { |token| parse_one(token) }
           end
         else
           namespace ? new(namespace, query) : raise(QueryParseError, "can not tokenize #{query.inspect}")
         end
       end
 
+      def self.parse(value, separator: nil)
+        return [] if value.nil?
+        if value.is_a?(String)
+          value = value.delete_prefix("?").split(separator || SEPARATOR, -1)
+        end
+        value.map do |p|
+          parse_one(p)
+        end
+      end
+
+
       # Note this departs from WHATWG's specified parsing algorithm by
       # giving a nil value for keys that do not use '='. Callers that need
       # the standard's interpretation can use `v.to_s`.
-      def self.parse(value)
+      def self.parse_one(value)
         case value
         when QueryToken
           value
@@ -98,7 +108,7 @@ module ActiveSupport
       end
 
       def ==(other)
-        other = self.class.parse(other)
+        other = self.class.parse_one(other)
         return false unless other
         to_s == other.to_s
       end

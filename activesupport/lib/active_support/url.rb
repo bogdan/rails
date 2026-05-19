@@ -202,7 +202,7 @@ module ActiveSupport
       elsif @query
         QueryToken.tokenize(@query)
       elsif @query_string
-        @query_tokens = QueryToken.tokenize(@query_string)
+        @query_tokens = QueryToken.parse(@query_string)
       else
         []
       end
@@ -289,7 +289,7 @@ module ActiveSupport
       when Hash
         self.query = self.query.deep_merge(query.deep_stringify_keys)
       when String, Array
-        self.query_tokens += QueryToken.tokenize(query)
+        self.query_tokens += QueryToken.parse(query)
       when nil
       else
         raise QueryParseError, "#{query.inspect} can not be merged"
@@ -512,7 +512,7 @@ module ActiveSupport
         @query_tokens = nil
       else
         @query = nil
-        @query_tokens = QueryToken.tokenize(tokens)
+        @query_tokens = QueryToken.parse(tokens)
       end
       @query_string = nil
     end
