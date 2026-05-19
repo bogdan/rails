@@ -12,11 +12,11 @@ module ActiveSupport
 
     ESSENTIAL_PARTS =  [
       :anchor, :protocol, :query_string,
-      :path, :host, :port, :username, :password,
+      :path, :hostname, :port, :username, :password,
     ]
 
     COMBINED_PARTS = [
-      :hostinfo, :userinfo, :authority, :ssl, :domain, :domainname,
+      :host, :hostinfo, :userinfo, :authority, :ssl, :domain, :domainname,
       :domainzone, :request, :location, :endpoint, :query, :query_tokens,
       :directory, :extension, :file, :filename
     ]
@@ -26,7 +26,6 @@ module ActiveSupport
     ALIASES = {
       protocol: [:schema, :scheme],
       anchor: [:fragment],
-      host: [:hostname],
       username: [:user],
       request: [:request_uri]
     }
@@ -306,15 +305,32 @@ module ActiveSupport
       end
     end
 
-    def host=(host)
-      @host = case host
-              when Array
-                join_domain(host)
-              when "", nil
-                nil
-              else
-                host.to_s.downcase
-              end
+    # Returns the host in URI syntax: IPv6 addresses are wrapped in brackets
+    # (e.g. "[::1]"), matching Ruby's URI#host convention. Use #hostname
+    # for the bare network address without brackets.
+    def host
+      return nil unless @hostname
+      ipv6_hostname? ? "[#{@hostname}]" : @hostname
+    end
+
+    def hostname=(hostname)
+      @parsed_host = nil
+      @hostname =
+        case hostname
+        when Array
+          join_domain(hostname)
+        when "", nil
+          nil
+        else
+          h = hostname.to_s.downcase
+          h = h[1..-2] if h.start_with?("[")
+          raise ParseError, "invalid URI (bad hostname): #{hostname.inspect}" if h.match?(/[\[\]]/)
+          h
+        end
+    end
+
+    def host=(value)
+      self.hostname = value
     end
 
     def domainzone
@@ -358,15 +374,23 @@ module ActiveSupport
     end
 
     def hostinfo=(string)
-      if string.match(%r{\A\[.+\]\z}) #ipv6 host
-        self.host = string
-      else
-        if match = string.match(/\A(.+):(.*)\z/)
-          self.host, self.port = match.captures
-        else
-          self.host = string
+      if string.start_with?("[")
+        close = string.index("]")
+        raise ParseError, "invalid URI (bad IPv6 address): #{string.inspect}" unless close
+        self.host = string[1, close - 1]
+        rest = string[close + 1..]
+        if rest.empty?
           self.port = nil
+        elsif rest.start_with?(":")
+          self.port = rest[1..]
+        else
+          raise ParseError, "invalid URI (bad IPv6 address): #{string.inspect}"
         end
+      elsif match = string.match(/\A(.+):(.*)\z/)
+        self.host, self.port = match.captures
+      else
+        self.host = string
+        self.port = nil
       end
     end
 
@@ -762,6 +786,10 @@ module ActiveSupport
     end
 
     protected
+
+    def ipv6_hostname?
+      @hostname&.include?(":")
+    end
 
     def file_tokens
       file ? file.split('.') : []

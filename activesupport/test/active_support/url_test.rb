@@ -353,7 +353,9 @@ class URLParseTest < URLBaseTest
     assert_parts("http://[2406:da00:ff00::6b14:8d43]:8080/", {
       path: '/',
       port: 8080,
+      hostname: '2406:da00:ff00::6b14:8d43',
       host: '[2406:da00:ff00::6b14:8d43]',
+      hostinfo: '[2406:da00:ff00::6b14:8d43]:8080',
       protocol: 'http',
     })
   end
@@ -362,7 +364,9 @@ class URLParseTest < URLBaseTest
     assert_parts("http://[2406:da00:ff00::6b14:8d43]:/hello", {
       path: '/hello',
       port: nil,
+      hostname: '2406:da00:ff00::6b14:8d43',
       host: '[2406:da00:ff00::6b14:8d43]',
+      hostinfo: '[2406:da00:ff00::6b14:8d43]',
       protocol: 'http',
     })
   end
@@ -371,9 +375,47 @@ class URLParseTest < URLBaseTest
     assert_parts("[2406:da00:ff00::6b14:8d43]/hello", {
       path: '/hello',
       port: nil,
+      hostname: '2406:da00:ff00::6b14:8d43',
       host: '[2406:da00:ff00::6b14:8d43]',
+      hostinfo: '[2406:da00:ff00::6b14:8d43]',
       protocol: nil,
     })
+  end
+
+  def test_ipv6_roundtrip_with_port
+    assert_equal "http://[2406:da00:ff00::6b14:8d43]:8080/path",
+      ActiveSupport::URL.parse("http://[2406:da00:ff00::6b14:8d43]:8080/path").to_s
+  end
+
+  def test_ipv6_roundtrip_without_port
+    assert_equal "http://[::1]/path",
+      ActiveSupport::URL.parse("http://[::1]/path").to_s
+  end
+
+  def test_ipv6_build_from_parts
+    url = ActiveSupport::URL.new({protocol: "https", hostname: "::1", port: 8443, path: "/admin"})
+    assert_equal "::1", url.hostname
+    assert_equal "[::1]", url.host
+    assert_equal "https://[::1]:8443/admin", url.to_s
+  end
+
+  def test_ipv6_set_host_normalises_brackets
+    url = ActiveSupport::URL.parse("http://example.com/")
+    url.host = "[::1]"
+    assert_equal "::1", url.hostname
+    assert_equal "[::1]", url.host
+    assert_equal "http://[::1]/", url.to_s
+  end
+
+  def test_ipv6_missing_closing_bracket_raises
+    assert_raises(ActiveSupport::URL::ParseError) { ActiveSupport::URL.parse("https://[::1") }
+    assert_raises(ActiveSupport::URL::ParseError) { ActiveSupport::URL.parse("https://[::1/path") }
+    assert_raises(ActiveSupport::URL::ParseError) { ActiveSupport::URL.parse("https://[::1:8080/path") }
+  end
+
+  def test_stray_bracket_in_hostname_raises
+    assert_raises(ActiveSupport::URL::ParseError) { ActiveSupport::URL.parse("https://a223b.hello]:8000/hhe") }
+    assert_raises(ActiveSupport::URL::ParseError) { ActiveSupport::URL.parse("https://host[name]/path") }
   end
 
   def test_mailto_without_email
