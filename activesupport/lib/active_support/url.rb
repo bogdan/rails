@@ -70,7 +70,7 @@ module ActiveSupport
     FRAGMENT_UNSAFE = /[^a-zA-Z0-9\-\._~!$&'()*+,;=:@\/?]/.freeze
     # Matches rootless-path URIs: scheme:path without "//". Excludes host:port by
     # requiring the scheme to contain no dots and to be followed by a letter or end-of-string.
-    SCHEME_WITHOUT_AUTHORITY_REGEXP = /\A[a-zA-Z][a-zA-Z0-9+\-]*:(?=[a-zA-Z]|\z)/.freeze
+    SCHEME_WITHOUT_AUTHORITY_REGEXP = /\A[a-zA-Z][a-zA-Z0-9+\-]*:(?=[a-zA-Z:]|\z)/.freeze
     # Matches authority-less hierarchical URIs: scheme:/path (single slash, no authority).
     SCHEME_WITHOUT_AUTHORITY_PATH_REGEXP = /\A([a-zA-Z][a-zA-Z0-9+\-]*):\/(?!\/)/.freeze
     # Matches any addressing scheme (mailto:, xmpp:, etc.) — compiled once from PROTOCOLS.

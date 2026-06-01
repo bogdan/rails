@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "uri"
+require "active_support/url"
 require "active_support/core_ext/enumerable"
 require "active_support/core_ext/hash/reverse_merge"
 
@@ -24,63 +24,46 @@ module ActiveRecord
       #   }
       def initialize(url)
         raise "Database URL cannot be empty" if url.blank?
-        @uri     = uri_parser.parse(url)
+        @url = ActiveSupport::URL.parse(url)
         @adapter = resolved_adapter
-
-        if @uri.opaque
-          @uri.opaque, @query = @uri.opaque.split("?", 2)
-        else
-          @query = @uri.query
-        end
       end
 
       # Converts the given URL to a full connection hash.
       def to_hash
-        config = raw_config.compact_blank
-        config.map { |key, value| config[key] = uri_parser.unescape(value) if value.is_a? String }
-        config
+        raw_config.compact_blank
       end
 
       private
-        attr_reader :uri
-
-        def uri_parser
-          @uri_parser ||= URI::RFC2396_Parser.new
-        end
-
-        # Converts the query parameters of the URI into a hash.
-        #
-        #   "localhost?pool=5&reaping_frequency=2"
-        #   # => { pool: "5", reaping_frequency: "2" }
-        #
-        # returns empty hash if no query present.
-        #
-        #   "localhost"
-        #   # => {}
         def query_hash
-          Hash[(@query || "").split("&").map { |pair| pair.split("=", 2) }].symbolize_keys
+          @url.query.symbolize_keys
         end
 
         def raw_config
-          if uri.opaque
+          if @url.opaque?
             query_hash.merge(
               adapter: @adapter,
-              database: uri.opaque
+              database: unescape(@url.opaque)
             )
+          elsif bare_database_name?
+            { database: @url.hostname }
           else
             query_hash.reverse_merge(
               adapter: @adapter,
-              username: uri.user,
-              password: uri.password,
-              port: uri.port,
+              username: @url.username,
+              password: @url.password,
+              port: @url.port,
               database: database_from_path,
-              host: uri.hostname
+              host: @url.hostname
             )
           end
         end
 
+        def bare_database_name?
+          @url.protocol.nil? && @url.path.nil?
+        end
+
         def resolved_adapter
-          adapter = uri.scheme && @uri.scheme.tr("-", "_")
+          adapter = @url.protocol&.tr("-", "_")
           if adapter && ActiveRecord.protocol_adapters[adapter]
             adapter = ActiveRecord.protocol_adapters[adapter]
           end
@@ -94,13 +77,18 @@ module ActiveRecord
             # corresponding relative version, 'sqlite3:foo', is handled
             # elsewhere, as an "opaque".
 
-            uri.path
+            unescape(@url.path)
           else
             # Only SQLite uses a filename as the "database" name; for
             # anything else, a leading slash would be silly.
 
-            uri.path.delete_prefix("/")
+            unescape(@url.path&.delete_prefix("/"))
           end
+        end
+
+        def unescape(string)
+          return string unless string.is_a?(String)
+          ::URI::RFC2396_PARSER.unescape(string)
         end
     end
   end

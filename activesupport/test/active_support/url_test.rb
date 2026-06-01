@@ -961,6 +961,14 @@ class URLAuthorityLessTest < URLBaseTest
     assert_equal "sqlite3:relative/path", ActiveSupport::URL.parse("sqlite3:relative/path").to_s
   end
 
+  def test_sqlite3_in_memory
+    assert_parts "sqlite3::memory:", protocol: "sqlite3", host: nil, path: ":memory:", opaque?: true
+  end
+
+  def test_sqlite3_in_memory_roundtrip
+    assert_equal "sqlite3::memory:", ActiveSupport::URL.parse("sqlite3::memory:").to_s
+  end
+
   def test_file_single_slash
     assert_parts "file:/etc/hosts", protocol: "file", host: nil, path: "/etc/hosts", opaque?: false
   end
